@@ -155,6 +155,7 @@ layer parse_deconvolutional(list *options, size_params params)
     int n = option_find_int(options, "filters",1);
     int size = option_find_int(options, "size",1);
     int stride = option_find_int(options, "stride",1);
+    int groups = option_find_int_quiet(options, "groups", 1);
 
     char *activation_s = option_find_str(options, "activation", "logistic");
     ACTIVATION activation = get_activation(activation_s);
@@ -170,7 +171,7 @@ layer parse_deconvolutional(list *options, size_params params)
     int padding = option_find_int_quiet(options, "padding",0);
     if(pad) padding = size/2;
 
-    layer l = make_deconvolutional_layer(batch,h,w,c,n,size,stride,padding, activation, batch_normalize, params.net->adam);
+    layer l = make_deconvolutional_layer(batch,h,w,c,n,groups,size,stride,padding, activation, batch_normalize, params.net->adam);
 
     return l;
 }
