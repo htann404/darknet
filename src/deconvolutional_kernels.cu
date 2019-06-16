@@ -124,6 +124,8 @@ void update_deconvolutional_layer_gpu(layer l, update_args a)
         }
     }else{
         axpy_gpu(l.nweights, -decay*batch, l.weights_gpu, 1, l.weight_updates_gpu, 1);
+		if(l.weight_prune_mask_gpu)
+			mul_gpu(l.nweights, l.weight_prune_mask_gpu, 1, l.weight_updates_gpu, 1);
         axpy_gpu(l.nweights, learning_rate/batch, l.weight_updates_gpu, 1, l.weights_gpu, 1);
         scal_gpu(l.nweights, momentum, l.weight_updates_gpu, 1);
 

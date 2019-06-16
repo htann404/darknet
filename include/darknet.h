@@ -237,6 +237,7 @@ struct layer{
 
     float * weights;
     float * weight_updates;
+    float * weight_prune_mask;
 
     float * delta;
     float * output;
@@ -392,6 +393,7 @@ struct layer{
     float * weights_gpu;
     float * weight_updates_gpu;
     float * weight_change_gpu;
+    float * weight_prune_mask_gpu;
 
     float * biases_gpu;
     float * bias_updates_gpu;
@@ -560,6 +562,7 @@ typedef struct load_args{
     int num_boxes;
     int min, max, size;
     int classes;
+    int grayscale;
     int background;
     int scale;
     int center;

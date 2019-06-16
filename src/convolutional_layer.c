@@ -551,6 +551,8 @@ void update_convolutional_layer(convolutional_layer l, update_args a)
     }
 
     axpy_cpu(l.nweights, -decay*batch, l.weights, 1, l.weight_updates, 1);
+	if (l.weight_prune_mask)
+		mul_cpu(l.nweights, l.weight_prune_mask, 1, l.weight_updates, 1);
     axpy_cpu(l.nweights, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
     scal_cpu(l.nweights, momentum, l.weight_updates, 1);
 }

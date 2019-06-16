@@ -305,6 +305,8 @@ void update_deconvolutional_layer(layer l, update_args a)
     }
 
     axpy_cpu(size, -decay*batch, l.weights, 1, l.weight_updates, 1);
+	if (l.weight_prune_mask)
+		mul_cpu(size, l.weight_prune_mask, 1, l.weight_updates, 1);
     axpy_cpu(size, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
     scal_cpu(size, momentum, l.weight_updates, 1);
 }
