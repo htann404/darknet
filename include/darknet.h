@@ -688,6 +688,7 @@ data *tile_data(data orig, int divs, int size);
 data select_data(data *orig, int *inds);
 
 // quantization stuffs
+void init_prune_mask(network *net, int from_scratch);
 void read_quantized_net_cfg(network *net, char *filename);
 void allocate_quantized_weight_copy(network *net);
 float train_network_quantized(network *net, data d);
@@ -696,6 +697,7 @@ void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float 
 #define NUM_SEG_ACCURACY_ELEMENTS 5
 #endif
 void calc_TPFP_TNFN(network *net, int n, float *rate);
+void fold_batch_norm_params(network *net);
 
 void forward_network(network *net);
 void backward_network(network *net);
@@ -781,6 +783,7 @@ void free_network(network *net);
 void set_batch_network(network *net, int b);
 void set_temp_network(network *net, float t);
 image load_image(char *filename, int w, int h, int c);
+image load_image_signed(char *filename, int w, int h, int c);
 image load_image_grayscale(char *filename, int w, int h);
 image load_image_color(char *filename, int w, int h);
 image make_image(int w, int h, int c);

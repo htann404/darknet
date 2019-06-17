@@ -95,7 +95,7 @@ void prune(network *net, PRUNE_TYPE type, float percent, int first_layer, int la
 }
 
 // Initialize the prune mask:
-void init_prune_mask(network *net){
+void init_prune_mask(network *net, int from_scratch){
 	int i, j, num_weights;
 	for (i=0; i<net->n; ++i) {
 		layer *l = &(net->layers[i]);
@@ -107,7 +107,7 @@ void init_prune_mask(network *net){
 		if (!l->weight_prune_mask)
 			l->weight_prune_mask = malloc(num_weights*sizeof(float));
 		for (j=0; j<num_weights; ++j){
-			l->weight_prune_mask[j] = 1;
+			l->weight_prune_mask[j] = (from_scratch) ? 1. : (float)(l->weights[j]!=0);
 		}
 #ifdef GPU
 		if (gpu_index >= 0){
@@ -216,20 +216,27 @@ void compress_weights(network *net)
 
 void count_zeros(network *net){
 	int i,j,count,num_weights;
+	int total_w=0, total_acts=0;
+	int total_wz=0, total_actsz=0;
 	for (i=0; i<net->n; ++i) {
 		layer *l = &(net->layers[i]);
 		if(!l->weights)
 			continue;
 		num_weights = (l->nweights > 0) ? l->nweights : l->inputs*l->outputs;
+		total_w += num_weights;
+
 		count = 0;
 		for (j=0; j<num_weights; ++j)
 			if (l->weights[j]==0)
 				++count;
+		total_wz += count;
 		fprintf(stderr, "Layer %d, Type %d, Num Weights: %d, Fraction Zeros: %.4f\n",
 				i, l->type, num_weights, ((float)count)/num_weights);
 		
 		if(!l->outputs)
 			continue;
+
+		total_acts += l->outputs;
 		count = 0;
 #ifdef GPU
 		if(gpu_index >= 0)
@@ -238,9 +245,15 @@ void count_zeros(network *net){
 		for (j=0; j<l->outputs; ++j)
 			if (l->output[j]==0)
 				++count;
+		
+		total_actsz += count;
 		fprintf(stderr, "\t\tNum Activations: %d, Fraction Zeros: %.4f\n",
 							l->outputs, ((float)count)/l->outputs );
 	}
+	fprintf(stderr, "Total Num Weights: %d, Fraction Zeros: %.4f\n",
+			total_w, ((float)total_wz)/total_w);
+	fprintf(stderr, "Total Num Activations: %d, Fraction Zeros: %.4f\n",
+				total_acts, ((float)total_actsz)/total_acts );
 }
 
 // this is mostly similar to segmenter_train
@@ -320,7 +333,7 @@ void iterative_pruning(char *datacfg, char *cfgfile, char *weightfile, char *qua
 	float cur_acc[NUM_SEG_ACCURACY_ELEMENTS] = {0};
 	run_and_calc_seg_accuracy(net, &args, N, orig_acc);
 
-	init_prune_mask(net);
+	init_prune_mask(net,1);
 	//prune(net, PERCENTAGE, 0.05, 1, 1);
 	prune(net, MAGNITUDE, 0, 1, 1);
 
@@ -405,7 +418,10 @@ void iterative_pruning(char *datacfg, char *cfgfile, char *weightfile, char *qua
 void count_using_model_cfg(char *datacfg, char *cfgfile, char *weightfile, char* quantized_cfg, char *filename, int compress)
 {
 	network *net = load_network(cfgfile, weightfile, 0);
-    set_batch_network(net, 1);
+    if (net->batch > 1)
+		error("Not supporting testing with larger batch size at the moment");
+	net->train = 0;
+	fold_batch_norm_params(net);
 	
 	if (compress)
 		compress_weights(net);
@@ -417,12 +433,13 @@ void count_using_model_cfg(char *datacfg, char *cfgfile, char *weightfile, char*
 	}
 
 	if (filename){
-		image im = load_image_color(filename, 0, 0);
-        image sized = letterbox_image(im, net->w, net->h);
-
-        float *X = sized.data;
-        double time = clock();
-        float *predictions = network_predict(net, X);
+		float *predictions;
+		//image im, sized;
+		double time;
+		image im = load_image_signed(filename, 0, 0, 1);
+    	image sized = letterbox_image(im, net->w, net->h);
+    	time = clock();
+		predictions = network_predict(net, sized.data);
         printf("Predicted: %f\n", predictions[0]);
         printf("%s: Predicted in %f seconds.\n", filename, sec(clock()-time));
         free_image(im);
@@ -463,7 +480,7 @@ void run_pruning(int argc, char **argv)
     }
 
     int clear = find_arg(argc, argv, "-clear");
-	int nq = find_arg(argc, argv, "-no-quantize");
+	int nq = find_arg(argc, argv, "-no-quantize-cfg");
 	int compress = find_arg(argc, argv, "-compress");
 
     char *data = argv[3];

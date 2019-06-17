@@ -87,7 +87,7 @@ void fold_batch_norm_params(network *net){
 	int i,j,k;
 	for (i=0; i<net->n; ++i){
 		layer *l = &(net->layers[i]);
-		if (!l->batch_normalize)
+		if (!l->weights || !l->batch_normalize)
 			continue;
 		int c = l->out_c;
 		int nweights = l->nweights;
@@ -116,6 +116,7 @@ void fold_batch_norm_params(network *net){
 		}
 #endif
 	}
+	fprintf(stderr, "Done folding all batchnorm params.\n");
 }
 
 
@@ -163,26 +164,28 @@ void read_quantized_net_cfg(network *net, char *filename) {
 	char *head;
 	int i,j,num;
 	for (i=0; i<net->n; ++i){
-		if(!net->layers[i].weights)
-			continue;
-		if(fgets(buffer, size, fid)==NULL)
-			error("Unable to read necessary line from ordering.tmp.");
-		head = buffer;
-		num = 0;
-		for(j=0; buffer[j] != '\0' && j < size-1; ++j){
-			if(buffer[j]==' ' || buffer[j]==',' || buffer[j]=='\n'){
-				buffer[j] = '\0';
-				params[num++] = atoi(head);
-				head = buffer+j+1; 
+		layer *l = &(net->layers[i]);
+		if (!l->quantize)
+			l->quantize = calloc(1,sizeof(quantize_params));
+		quantize_params *q = l->quantize;
+		if(l->weights){
+			if(fgets(buffer, size, fid)==NULL){
+				fprintf(stderr, "Unable to read necessary line from %s.\n", filename);
+				exit(0);
 			}
-			if(num >= num_params)
-				 break;
+			head = buffer;
+			num = 0;
+			for(j=0; buffer[j] != '\0' && j < size-1; ++j){
+				if(buffer[j]==' ' || buffer[j]==',' || buffer[j]=='\n'){
+					buffer[j] = '\0';
+					params[num++] = atoi(head);
+					head = buffer+j+1; 
+				}
+				if(num >= num_params)
+				 	 break;
+			}
+			assert(i==params[0]);
 		}
-		assert(i==params[0]);
-		if (!net->layers[i].quantize)
-			net->layers[i].quantize = calloc(1,sizeof(quantize_params));
-		
-		quantize_params *q = net->layers[i].quantize;
 		q->in_bw = params[1];
 		q->in_fl = params[2];
 		q->out_bw = params[3];
@@ -313,7 +316,7 @@ void test_quantization(char *datacfg, char *cfgfile, char *weightfile,
 	if (net->batch > 1)
 		error("Not supporting testing with larger batch size at the moment");
 	net->train = 0;	
-    set_batch_network(net, 1);
+	fold_batch_norm_params(net);
 	// Initialize the quantization parameters:
 	if (quantized_cfg) {
 		read_quantized_net_cfg(net, quantized_cfg);
@@ -373,7 +376,8 @@ void test_quantization(char *datacfg, char *cfgfile, char *weightfile,
 		//fold_batch_norm_params(net);
 		//run_and_calc_seg_accuracy(net, &args, N, acc);	
 		//fprintf(stderr, "Recall: %.4f, Precision: %.4f, F-1: %.4f, E1: %.4f, E2: %.4f\n",
-		//		acc[0], acc[1], acc[2], acc[3], acc[4]);		if(paths) free_ptrs((void**)paths, plist->size);
+		//		acc[0], acc[1], acc[2], acc[3], acc[4]);
+		if(paths) free_ptrs((void**)paths, plist->size);
     	if(plist) free_list(plist);
 	}
 	
@@ -454,6 +458,7 @@ void perform_quantization(int finetune, char *datacfg, char *cfgfile, char *weig
 	// Initialize the quantization parameters:
 	profiler *prof=NULL;
 	if (!finetune) {
+		fold_batch_norm_params(net);
 		int num_prof_layer = 0;
 		for (i=0; i < net->n; ++i) {
 			if (!net->layers[i].weights)
@@ -474,6 +479,8 @@ void perform_quantization(int finetune, char *datacfg, char *cfgfile, char *weig
     args.d = &buffer;
     load_thread = load_data(args);
 	
+	init_prune_mask(net, 0);
+
     int epoch = (*net->seen)/N;
     while(get_current_batch(net) < net->max_batches || net->max_batches == 0){
         double time = what_time_is_it_now();
@@ -560,7 +567,7 @@ void run_quantizer(int argc, char **argv)
     }
 
 	int clear = find_arg(argc, argv, "-clear");
-	int nq = find_arg(argc, argv, "-no-quantize");
+	int nq = find_arg(argc, argv, "-no-quantize-cfg");
     char *data = argv[3];
     char *cfg = argv[4];
     char *weights = (argc > 5) ? argv[5] : 0;

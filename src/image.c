@@ -1314,6 +1314,37 @@ image load_image_stb(char *filename, int channels)
     return im;
 }
 
+image load_image_signed(char *filename, int width, int height, int channel)
+{
+    int w, h, c;
+    unsigned char *data = stbi_load(filename, &w, &h, &c, channel);
+    if (!data) {
+        fprintf(stderr, "Cannot load image \"%s\"\nSTB Reason: %s\n",
+				filename, stbi_failure_reason());
+        exit(0);
+    }
+    if(channel) c = channel;
+    int i,j,k;
+    image im = make_image(w, h, c);
+    for(k = 0; k < c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int dst_index = i + w*j + w*h*k;
+                int src_index = k + c*i + c*w*j;
+                im.data[dst_index] = ((float)data[src_index]-128.)/128.;
+            }
+        }
+    }
+    free(data);
+
+    if((height && width) && (height != im.h || width != im.w)){
+        image resized = resize_image(im, width, height);
+        free_image(im);
+        im = resized;
+    }
+    return im;
+}
+
 image load_image(char *filename, int w, int h, int c)
 {
 #ifdef OPENCV
