@@ -85,6 +85,10 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network net)
         net.input_gpu = l.binary_input_gpu;
     }
 
+	quantize_params *q = l.quantize;
+	if(q) {
+		quantize_gpu(net.input_gpu, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+	}
 #ifdef CUDNN
     float one = 1;
     cudnnConvolutionForward(cudnn_handle(),
@@ -130,6 +134,9 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network net)
     }
 
     activate_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation);
+	if(q) {
+		quantize_gpu(l.output_gpu, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+	}
     //if(l.dot > 0) dot_error_gpu(l);
     if(l.binary || l.xnor) swap_binary(&l);
 }
@@ -315,7 +322,6 @@ void update_convolutional_layer_gpu(layer l, update_args a)
 			mul_gpu(l.nweights, l.weight_prune_mask_gpu, 1, l.weight_updates_gpu, 1);
         axpy_gpu(l.nweights, learning_rate/batch, l.weight_updates_gpu, 1, l.weights_gpu, 1);
         scal_gpu(l.nweights, momentum, l.weight_updates_gpu, 1);
-
         axpy_gpu(l.n, learning_rate/batch, l.bias_updates_gpu, 1, l.biases_gpu, 1);
         scal_gpu(l.n, momentum, l.bias_updates_gpu, 1);
 

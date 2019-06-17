@@ -21,8 +21,13 @@ extern "C" void forward_deconvolutional_layer_gpu(layer l, network net)
     int m = l.size*l.size*l.n;
     int n = l.h*l.w;
     int k = l.c;
-
-    fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
+	
+	quantize_params *q = l.quantize;
+	if(q) {
+		quantize_gpu(net.input_gpu, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+	}
+    
+	fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
 
     for(i = 0; i < l.batch; ++i){
         float *a = l.weights_gpu;
@@ -39,6 +44,10 @@ extern "C" void forward_deconvolutional_layer_gpu(layer l, network net)
         add_bias_gpu(l.output_gpu, l.biases_gpu, l.batch, l.n, l.out_w*l.out_h);
     }
     activate_array_gpu(l.output_gpu, l.batch*l.n*l.out_w*l.out_h, l.activation);
+	
+	if(q) {
+		quantize_gpu(l.output_gpu, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+	}
 }
 
 extern "C" void backward_deconvolutional_layer_gpu(layer l, network net)

@@ -21,6 +21,7 @@ void mul_cpu(int N, float *X, int INCX, float *Y, int INCY);
 
 int test_gpu_blas();
 void shortcut_cpu(int batch, int w1, int h1, int c1, float *add, int w2, int h2, int c2, float s1, float s2, float *out);
+void shortcut_cpu_with_reordering(int batch, int w1, int h1, int c1, float *add, int w2, int h2, int c2, float s1, float s2, float *out, int *order0, int *order1);
 
 void mean_cpu(float *x, int batch, int filters, int spatial, float *mean);
 void variance_cpu(float *x, float *mean, int batch, int filters, int spatial, float *variance);
@@ -43,6 +44,8 @@ void weighted_delta_cpu(float *a, float *b, float *s, float *da, float *db, floa
 void softmax(float *input, int n, float temp, int stride, float *output);
 void softmax_cpu(float *input, int n, int batch, int batch_offset, int groups, int group_offset, int stride, float temp, float *output);
 void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out);
+
+void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 
 #ifdef GPU
 #include "cuda.h"
@@ -100,6 +103,9 @@ void adam_gpu(int n, float *x, float *m, float *v, float B1, float B2, float rat
 void flatten_gpu(float *x, int spatial, int layers, int batch, int forward, float *out);
 void softmax_tree(float *input, int spatial, int batch, int stride, float temp, float *output, tree hier);
 void upsample_gpu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out);
+
+
+void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 
 #endif
 #endif

@@ -14,6 +14,7 @@ extern void run_classifier(int argc, char **argv);
 extern void run_regressor(int argc, char **argv);
 extern void run_segmenter(int argc, char **argv);
 extern void run_pruning(int argc, char **argv);
+extern void run_quantizer(int argc, char **argv);
 extern void run_isegmenter(int argc, char **argv);
 extern void run_char_rnn(int argc, char **argv);
 extern void run_tag(int argc, char **argv);
@@ -456,6 +457,8 @@ int main(int argc, char **argv)
         run_segmenter(argc, argv);
     } else if (0 == strcmp(argv[1], "prune")){
     	run_pruning(argc, argv);
+    } else if (0 == strcmp(argv[1], "quantize")){
+    	run_quantizer(argc, argv);
     } else if (0 == strcmp(argv[1], "art")){
         run_art(argc, argv);
     } else if (0 == strcmp(argv[1], "tag")){

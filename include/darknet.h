@@ -106,6 +106,36 @@ typedef struct{
     int t;
 } update_args;
 
+typedef enum{
+	ROUND_NEAREST, ROUND_STOCHASTIC
+} ROUNDING_MODE;
+
+// rounding mode for the weights:
+// activations are always in dynamic fixed point
+typedef enum{
+	POW_OF_2, DFP, TERNARY, BINARY
+} QUANTIZATION_TYPE;
+
+// Quantization Parameters
+typedef struct{
+	int in_bw; // activation bw
+	int in_fl; // activation fractional length
+	int out_bw;
+	int out_fl;
+	int w_bw;
+	int w_fl;
+	ROUNDING_MODE mode;
+	QUANTIZATION_TYPE a_type;
+	QUANTIZATION_TYPE w_type;
+	float *weight_copy;
+	float *bias_copy;
+#ifdef GPU
+	float *weight_copy_gpu;
+	float *bias_copy_gpu;
+#endif
+
+} quantize_params;
+
 struct network;
 typedef struct network network;
 
@@ -211,6 +241,8 @@ struct layer{
     int   * indexes;
     int   * input_layers;
     int   * input_sizes;
+	// (htann404) for channel shuffling
+	int	  * output_ordering;
     int   * map;
     int   * counts;
     float ** sums;
@@ -228,7 +260,8 @@ struct layer{
     float * concat_delta;
 
     float * binary_weights;
-
+    quantize_params * quantize;
+	
     float * biases;
     float * bias_updates;
 
@@ -237,7 +270,7 @@ struct layer{
 
     float * weights;
     float * weight_updates;
-    float * weight_prune_mask;
+	float * weight_prune_mask;
 
     float * delta;
     float * output;
@@ -393,7 +426,7 @@ struct layer{
     float * weights_gpu;
     float * weight_updates_gpu;
     float * weight_change_gpu;
-    float * weight_prune_mask_gpu;
+	float * weight_prune_mask_gpu;
 
     float * biases_gpu;
     float * bias_updates_gpu;
@@ -479,6 +512,10 @@ typedef struct network{
     int gpu_index;
     tree *hierarchy;
 
+	// (htann404) for channel shuffling.
+	int shuffled_channels;
+	int* shuffled_layers;
+
     float *input;
     float *truth;
     float *delta;
@@ -517,6 +554,25 @@ typedef struct {
 typedef struct{
     float x, y, w, h;
 } box;
+
+// htann: profiler for channel shuffling
+typedef struct {
+    int layer_index;
+	LAYER_TYPE type;
+	int batch;
+    int n,h,w,c;
+	// intended ordering of the output channel
+	int *ordering;
+	// max activaitons:
+	float max_activation;
+	float val99_activation;
+	// max weights:
+	float max_weight;
+	float val99_weight;
+	float max_bias;
+	float val99_bias;
+    float *activations;
+} profiler;
 
 typedef struct detection{
     box bbox;
@@ -684,6 +740,7 @@ int option_find_int_quiet(list *l, char *key, int def);
 
 network *parse_network_cfg(char *filename);
 void save_weights(network *net, char *filename);
+void save_weights_shuffled(network *net, char *filename, profiler *prof, int num);
 void load_weights(network *net, char *filename);
 void save_weights_upto(network *net, char *filename, int cutoff);
 void load_weights_upto(network *net, char *filename, int start, int cutoff);
@@ -695,6 +752,7 @@ void free_network(network *net);
 void set_batch_network(network *net, int b);
 void set_temp_network(network *net, float t);
 image load_image(char *filename, int w, int h, int c);
+image load_image_grayscale(char *filename, int w, int h);
 image load_image_color(char *filename, int w, int h);
 image make_image(int w, int h, int c);
 image resize_image(image im, int w, int h);

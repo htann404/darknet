@@ -37,7 +37,7 @@ layer make_deconvolutional_layer(int batch, int h, int w, int c, int n, int grou
     int i;
     layer l = {0};
     l.type = DECONVOLUTIONAL;
-
+	
 	l.groups = groups;
     l.h = h;
     l.w = w;
@@ -227,8 +227,13 @@ void forward_deconvolutional_layer(const layer l, network net)
     int m = l.size*l.size*l.n;
     int n = l.h*l.w;
     int k = l.c;
-
-    fill_cpu(l.outputs*l.batch, 0, l.output, 1);
+	
+	quantize_params *q = l.quantize;
+	if(q) {
+		quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+	}
+    
+	fill_cpu(l.outputs*l.batch, 0, l.output, 1);
 
     for(i = 0; i < l.batch; ++i){
         float *a = l.weights;
@@ -245,6 +250,10 @@ void forward_deconvolutional_layer(const layer l, network net)
         add_bias(l.output, l.biases, l.batch, l.n, l.out_w*l.out_h);
     }
     activate_array(l.output, l.batch*l.n*l.out_w*l.out_h, l.activation);
+	
+	if(q) {
+		quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+	}
 }
 
 void backward_deconvolutional_layer(layer l, network net)

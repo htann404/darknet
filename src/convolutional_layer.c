@@ -454,6 +454,11 @@ void forward_convolutional_layer(convolutional_layer l, network net)
         binarize_cpu(net.input, l.c*l.h*l.w*l.batch, l.binary_input);
         net.input = l.binary_input;
     }
+	
+	quantize_params *q = l.quantize;
+	if(q) {
+		quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+	}
 
     int m = l.n/l.groups;
     int k = l.size*l.size*l.c/l.groups;
@@ -481,6 +486,10 @@ void forward_convolutional_layer(convolutional_layer l, network net)
     }
 
     activate_array(l.output, l.outputs*l.batch, l.activation);
+
+	if(q) {
+		quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+	}
     if(l.binary || l.xnor) swap_binary(&l);
 }
 

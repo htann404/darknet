@@ -35,6 +35,7 @@ void free_layer(layer l)
     if(l.weight_updates)     free(l.weight_updates);
     if(l.delta)              free(l.delta);
     if(l.output)             free(l.output);
+	if(l.output_ordering)	 free(l.output_ordering);
     if(l.squared)            free(l.squared);
     if(l.norms)              free(l.norms);
     if(l.spatial_mean)       free(l.spatial_mean);
@@ -52,6 +53,16 @@ void free_layer(layer l)
     if(l.r_cpu)              free(l.r_cpu);
     if(l.h_cpu)              free(l.h_cpu);
     if(l.binary_input)       free(l.binary_input);
+	
+	if(l.quantize){
+		if (l.quantize->weight_copy) free(l.quantize->weight_copy);
+		if (l.quantize->bias_copy)   free(l.quantize->bias_copy);
+#ifdef GPU
+		if (l.quantize->weight_copy_gpu) cuda_free(l.quantize->weight_copy_gpu);
+		if (l.quantize->bias_copy_gpu)   cuda_free(l.quantize->bias_copy_gpu);
+#endif
+		free(l.quantize);
+	}
 
 #ifdef GPU
     if(l.indexes_gpu)           cuda_free((float *)l.indexes_gpu);
