@@ -475,7 +475,15 @@ void forward_convolutional_layer(convolutional_layer l, network net)
             } else {
                 im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             }
-            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+
+			if (!l.weights_c)
+				gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+			else {
+				float *sp_a = l.weights_c->w;
+				int *ja = l.weights_c->jw;
+				int *ia = l.weights_c->iw;
+				sp_gemm_cpu(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
+			}
         }
     }
 

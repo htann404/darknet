@@ -12,6 +12,12 @@ void gemm(int TA, int TB, int M, int N, int K, float ALPHA,
                     float BETA,
                     float *C, int ldc);
 
+void sp_gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, 
+        float *A, int *jA, int *iA, int lda, 
+        float *B, int ldb,
+        float BETA,
+        float *C, int ldc);
+
 void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, 
         float *A, int lda, 
         float *B, int ldb,

@@ -240,7 +240,14 @@ void forward_deconvolutional_layer(const layer l, network net)
         float *b = net.input + i*l.c*l.h*l.w;
         float *c = net.workspace;
 
-        gemm_cpu(1,0,m,n,k,1,a,m,b,n,0,c,n);
+		if (!l.weights_c)
+        	gemm_cpu(1,0,m,n,k,1,a,m,b,n,0,c,n);
+		else{
+			float *sp_a = l.weights_c->w;
+			int *ja = l.weights_c->jw;
+			int *ia = l.weights_c->iw;
+			sp_gemm_cpu(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
+		}
 
         col2im_cpu(net.workspace, l.out_c, l.out_h, l.out_w, l.size, l.stride, l.pad, l.output+i*l.outputs);
     }

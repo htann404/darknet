@@ -327,6 +327,122 @@ float train_network(network *net, data d)
     return (float)sum/(n*batch);
 }
 
+void allocate_quantized_weight_copy(network *net){
+	for (int i=0; i < net->n; ++i) {
+		layer *l = &(net->layers[i]);
+		if (!l->weights)
+			continue;
+		int num_weights, num_biases;
+		// true for conv, deconv and fc layers.
+		num_weights = (l->nweights > 0) ? l->nweights : l->inputs*l->outputs;
+		num_biases = (l->nweights > 0) ? l->n : l->outputs;
+		assert(num_weights > 0);
+
+		if (!l->quantize)
+			l->quantize = calloc(1,sizeof(quantize_params));
+		l->quantize->weight_copy = calloc(num_weights, sizeof(float));
+		l->quantize->bias_copy = calloc(num_biases, sizeof(float));
+		assert(l->quantize->weight_copy);
+		assert(l->quantize->bias_copy);
+
+#ifdef GPU
+		if (gpu_index >= 0){
+			l->quantize->weight_copy_gpu = cuda_make_array(l->weights, num_weights);
+			l->quantize->bias_copy_gpu = cuda_make_array(l->biases, num_biases);
+		}
+#endif
+		// copy over the original weights:
+		memcpy(l->quantize->weight_copy, l->weights, num_weights*sizeof(float));
+		memcpy(l->quantize->bias_copy, l->biases, num_biases*sizeof(float));
+	}
+}
+
+void quantize_weights(network* net){
+	int i;
+	for (i=0; i<net->n; ++i){
+		layer *l = &(net->layers[i]);
+		if (!l->weights)
+			continue;
+		quantize_params *q = l->quantize;
+		int num_weights = (l->nweights > 0) ? l->nweights : l->inputs*l->outputs;
+		int num_biases = (l->nbiases > 0) ? l->nbiases : l->outputs;
+
+#ifdef GPU
+		if (gpu_index >= 0){
+			cudaError_t status;
+    		status = cudaMemcpy(l->weights_gpu, q->weight_copy_gpu, num_weights*sizeof(float), cudaMemcpyDeviceToDevice);
+    		//check_error(status);
+    		status = cudaMemcpy(l->biases_gpu, q->bias_copy_gpu, num_biases*sizeof(float), cudaMemcpyDeviceToDevice);
+    		//check_error(status);
+
+			quantize_gpu(l->weights_gpu, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
+			quantize_gpu(l->biases_gpu, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+			continue;
+		}
+#endif
+		memcpy(l->weights, q->weight_copy, num_weights*sizeof(float));
+		memcpy(l->biases, q->bias_copy, num_biases*sizeof(float));
+		quantize_cpu(l->weights, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
+		quantize_cpu(l->biases, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+	}
+}
+
+void swap_quantized_weight_pointers(network *net){
+	float *w, *b;
+	for (int i=0; i<net->n; ++i){
+		layer *l = &(net->layers[i]);
+		if (!l->weights)
+			continue;
+
+#ifdef GPU
+		if (gpu_index >= 0){
+			w = l->weights_gpu;
+			b = l->biases_gpu;
+
+			l->weights_gpu = l->quantize->weight_copy_gpu;
+			l->biases_gpu = l->quantize->bias_copy_gpu;
+
+			l->quantize->weight_copy_gpu = w;
+			l->quantize->bias_copy_gpu = b;
+			continue;
+		}
+#endif
+		w = l->weights;
+		b = l->biases;
+
+		l->weights =  l->quantize->weight_copy;
+		l->biases = l->quantize->bias_copy;
+
+		l->quantize->weight_copy = w;
+		l->quantize->bias_copy = b;
+	}
+}
+
+float train_network_quantized(network *net, data d){
+    assert(d.X.rows % net->batch == 0);
+	int batch = net->batch;
+ 	int n = d.X.rows / batch;
+
+	float sum = 0;
+	net->train = 1;
+    for(int i = 0; i < n; ++i){
+        get_next_batch(d, batch, i*batch, net->input, net->truth);
+	    *net->seen += net->batch;
+		// synchronize and quantize weights:
+		quantize_weights(net);
+    	forward_network(net);
+
+		//swap_quantized_weight_pointers(net);
+		backward_network(net);
+		sum += *net->cost;
+		swap_quantized_weight_pointers(net);
+		if(((*net->seen)/net->batch)%net->subdivisions == 0) update_network(net);
+    	// swap back:
+		swap_quantized_weight_pointers(net);
+    }
+	return (float)sum/(n*batch);
+}
+
 void set_temp_network(network *net, float t)
 {
     int i;

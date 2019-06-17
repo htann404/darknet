@@ -136,6 +136,24 @@ typedef struct{
 
 } quantize_params;
 
+typedef enum{
+	CSR, CSC
+} COMPRESSION_TYPE;
+// Compressed weights
+typedef struct{
+	COMPRESSION_TYPE type;
+	int nnz;
+	int n; // number of rows or columns + 1
+	float *w;
+	int *jw;
+	int *iw;
+#ifdef GPU
+	float *weights_gpu;
+	int *jw_gpu;
+	int *iw_gpu;
+#endif
+} compressed_weights;
+
 struct network;
 typedef struct network network;
 
@@ -268,6 +286,7 @@ struct layer{
     float * scales;
     float * scale_updates;
 
+	compressed_weights *weights_c;
     float * weights;
     float * weight_updates;
 	float * weight_prune_mask;
@@ -668,6 +687,16 @@ data resize_data(data orig, int w, int h);
 data *tile_data(data orig, int divs, int size);
 data select_data(data *orig, int *inds);
 
+// quantization stuffs
+void read_quantized_net_cfg(network *net, char *filename);
+void allocate_quantized_weight_copy(network *net);
+float train_network_quantized(network *net, data d);
+void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float *results);
+#ifndef NUM_SEG_ACCURACY_ELEMENTS
+#define NUM_SEG_ACCURACY_ELEMENTS 5
+#endif
+void calc_TPFP_TNFN(network *net, int n, float *rate);
+
 void forward_network(network *net);
 void backward_network(network *net);
 void update_network(network *net);
@@ -860,6 +889,7 @@ size_t rand_size_t();
 float rand_normal();
 float rand_uniform(float min, float max);
 
+void selection(float *val, int n, int k, int type);
 #ifdef __cplusplus
 }
 #endif

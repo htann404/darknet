@@ -54,9 +54,16 @@ void free_layer(layer l)
     if(l.h_cpu)              free(l.h_cpu);
     if(l.binary_input)       free(l.binary_input);
 	
+	if(l.weights_c){
+		if (l.weights_c->w)		free(l.weights_c->w);
+		if (l.weights_c->jw)	free(l.weights_c->jw);
+		if (l.weights_c->iw)	free(l.weights_c->iw);
+		free(l.weights_c);
+	}
+
 	if(l.quantize){
-		if (l.quantize->weight_copy) free(l.quantize->weight_copy);
-		if (l.quantize->bias_copy)   free(l.quantize->bias_copy);
+		if (l.quantize->weight_copy) 	free(l.quantize->weight_copy);
+		if (l.quantize->bias_copy)   	free(l.quantize->bias_copy);
 #ifdef GPU
 		if (l.quantize->weight_copy_gpu) cuda_free(l.quantize->weight_copy_gpu);
 		if (l.quantize->bias_copy_gpu)   cuda_free(l.quantize->bias_copy_gpu);
