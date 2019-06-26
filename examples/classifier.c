@@ -300,6 +300,51 @@ void validate_classifier_10(char *datacfg, char *filename, char *weightfile)
     }
 }
 
+void validate_classifier_from_net(network net_in, int topk, 
+                                  load_args args, float *results)
+{
+    int i, j;
+    network *net = &net_in;
+    set_batch_network(net, 1);
+
+    char **labels = args.labels;
+    char **paths = args.paths;
+    int classes = args.classes;
+    int m = args.m;
+
+    float avg_acc = 0;
+    float avg_topk = 0;
+    int *indexes = calloc(topk, sizeof(int));
+
+    for(i = 0; i < m; ++i){
+        int class = -1;
+        char *path = paths[i];
+        for(j = 0; j < classes; ++j){
+            if(strstr(path, labels[j])){
+                class = j;
+                break;
+            }
+        }
+        image im = load_image_color(paths[i], 0, 0);
+        image crop = center_crop_image(im, net->w, net->h);
+        
+        float *pred = network_predict(net, crop.data);
+        if(net->hierarchy) hierarchy_predictions(pred, net->outputs, net->hierarchy, 1, 1);
+
+        free_image(im);
+        free_image(crop);
+        top_k(pred, classes, topk, indexes);
+
+        if(indexes[0] == class) avg_acc += 1;
+        for(j = 0; j < topk; ++j){
+            if(indexes[j] == class) avg_topk += 1;
+        }
+    }
+    free(indexes);
+    results[0] = avg_acc/m; results[1] = avg_topk/m;
+    printf("%d: top 1: %f, top %d: %f\n", i, results[0], topk, results[1]);
+}
+
 void validate_classifier_full(char *datacfg, char *filename, char *weightfile)
 {
     int i, j;

@@ -103,8 +103,8 @@ void shortcut_cpu(int batch, int w1, int h1, int c1, float *add, int w2, int h2,
 }
 
 void shortcut_cpu_with_reordering(int batch, int w1, int h1, int c1, float *add, 
-								  int w2, int h2, int c2, float s1, float s2, float *out,
-								  int *order0, int *order1)
+                                  int w2, int h2, int c2, float s1, float s2, float *out,
+                                  int *order0, int *order1)
 {
     int stride = w1/w2;
     int sample = w2/w1;
@@ -112,24 +112,24 @@ void shortcut_cpu_with_reordering(int batch, int w1, int h1, int c1, float *add,
     assert(sample == h2/h1);
     if(stride < 1) stride = 1;
     if(sample < 1) sample = 1;
-	int minw = (w1 < w2) ? w1 : w2;
+    int minw = (w1 < w2) ? w1 : w2;
     int minh = (h1 < h2) ? h1 : h2;
-	
-	// TODO: allow c1 to be different from c2:
-	assert(c1==c2);
-	int ordering[c1];
-	int i,j,k,b;
-	for (i=0; i<c1; ++i){
-		int idx = (order0) ? order0[i] : i;
-		for (j=0; j<c2; ++j){
-			if (idx == order1[j]) {
-				ordering[i] = j;
-				break;
-			}
-		}
-	}
     
-	for(b = 0; b < batch; ++b){
+    // TODO: allow c1 to be different from c2:
+    assert(c1==c2);
+    int ordering[c1];
+    int i,j,k,b;
+    for (i=0; i<c1; ++i){
+        int idx = (order0) ? order0[i] : i;
+        for (j=0; j<c2; ++j){
+            if (idx == order1[j]) {
+                ordering[i] = j;
+                break;
+            }
+        }
+    }
+    
+    for(b = 0; b < batch; ++b){
         for(k = 0; k < c1; ++k){
             for(j = 0; j < minh; ++j){
                 for(i = 0; i < minw; ++i){
@@ -403,39 +403,39 @@ void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int for
 
 void quantize_fixedpoint(float *x, int n, int bw, int fl, ROUNDING_MODE mode)
 {
-	// Code from Ristretto: https://github.com/pmgysel/caffe 
-	// https://github.com/pmgysel/caffe/blob/master/LICENSE	
+    // Code from Ristretto: https://github.com/pmgysel/caffe 
+    // https://github.com/pmgysel/caffe/blob/master/LICENSE    
     float max_data = (pow(2, bw - 1) - 1) * pow(2, -fl);
-    float min_data = -pow(2, bw - 1) * pow(2, -fl);	
-	for(int i=0; i<n; ++i) {
-    	x[i] = max(min(x[i], max_data), min_data);
-    	// Round data
-    	x[i] /= pow(2, -fl);
-   		switch (mode) {
-    		case ROUND_NEAREST:
-      			x[i] = round(x[i]);
-      			break;
-    		case ROUND_STOCHASTIC:
-      			x[i] = floor(x[i] + RandUniform(0,1));
-    		default:
-      			break;
-    	}
-    	x[i] *= pow(2, -fl);
-	} 
+    float min_data = -pow(2, bw - 1) * pow(2, -fl);    
+    for(int i=0; i<n; ++i) {
+        x[i] = max(min(x[i], max_data), min_data);
+        // Round data
+        x[i] /= pow(2, -fl);
+           switch (mode) {
+            case ROUND_NEAREST:
+                  x[i] = round(x[i]);
+                  break;
+            case ROUND_STOCHASTIC:
+                  x[i] = floor(x[i] + RandUniform(0,1));
+            default:
+                  break;
+        }
+        x[i] *= pow(2, -fl);
+    } 
 }
 
 //TODO: support more precision type
 void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type)
 {
-	switch(type){
-		case DFP:
-			quantize_fixedpoint(x, n, bw, fl, mode);
-			break;
-		case POW_OF_2:
-		case TERNARY:
-		case BINARY:	
-		default:
-			error("Unsupported quantization types!");
-			break;
-	}
+    switch(type){
+        case DFP:
+            quantize_fixedpoint(x, n, bw, fl, mode);
+            break;
+        case POW_OF_2:
+        case TERNARY:
+        case BINARY:    
+        default:
+            error("Quantization format not implemented yet :(");
+            break;
+    }
 }

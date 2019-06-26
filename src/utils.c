@@ -726,24 +726,23 @@ float **one_hot_encode(float *a, int n, int k)
 
 // implment the selection algorithm
 void selection(float *val, int n, int k, int type){
-	assert(k >= 0);
-	assert(k <= n);
-	int i, j;
-	float myVal;
-	for (i=0; i < n; ++i)
-		val[i] = fabs(val[i]);
+    assert(k >= 0);
+    assert(k <= n);
+    int i, j;
+    float myVal;
+    for (i=0; i < n; ++i)
+        val[i] = fabs(val[i]);
 
-	for (i=0; i <= k; ++i){
-		myVal = val[i];
-		for (j=i+1; j < n; ++j){
-			val[j] = val[j];
-			if ((type && val[j] > myVal) ||
-				(!type && val[j] < myVal)){
-				myVal = val[j];
-				// swap
-				val[j] = val[i];
-				val[i] = myVal;
-			}
-		}
-	}
+    for (i=0; i <= k; ++i){
+        myVal = val[i];
+        for (j=i+1; j < n; ++j){
+            if ((type && val[j] > myVal) ||
+                (!type && val[j] < myVal)){
+                myVal = val[j];
+                // swap
+                val[j] = val[i];
+                val[i] = myVal;
+            }
+        }
+    }
 }

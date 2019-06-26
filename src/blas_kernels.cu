@@ -1039,43 +1039,41 @@ extern "C" void upsample_gpu(float *in, int w, int h, int c, int batch, int stri
 __global__ void quantize_FP_kernel(float *data, int cnt, int bit_width, int fl, ROUNDING_MODE rounding)
 {
     int index = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
-	if (index < cnt) {
-		// Code from Ristretto from https://github.com/pmgysel/caffe
-		// https://github.com/pmgysel/caffe/blob/master/LICENSE	
-   		float max_data = (powf(2, bit_width - 1) - 1) * powf(2, -fl);
-   		float min_data = -powf(2, bit_width - 1) * powf(2, -fl);	
-    	// Saturate data
-    	data[index] = fmax(fmin(data[index], max_data), min_data);
-    	// Round data
-    	data[index] /= powf(2, -fl);
-    	switch (rounding) {
-    		case ROUND_NEAREST:
-      	  	  data[index] = rint(data[index]);
-      	  	  break;
-    		case ROUND_STOCHASTIC:
-			  // not supported yet.
-      	  	  //cuda_random(&num, 1);
-			  //data[index] = __float2int_rd(data[index] + num);
-    		default:
-      	  	  break;
-    	}
-    	data[index] *= powf(2, -fl);
-	}
+    if (index < cnt) {
+        // Code from Ristretto from https://github.com/pmgysel/caffe
+        // https://github.com/pmgysel/caffe/blob/master/LICENSE    
+           float max_data = (powf(2, bit_width - 1) - 1) * powf(2, -fl);
+           float min_data = -powf(2, bit_width - 1) * powf(2, -fl);    
+        // Saturate data
+        data[index] = fmax(fmin(data[index], max_data), min_data);
+        // Round data
+        data[index] /= powf(2, -fl);
+        switch (rounding) {
+            case ROUND_NEAREST:
+                  data[index] = rint(data[index]);
+                  break;
+            case ROUND_STOCHASTIC:
+              // not supported yet.
+            default:
+                  break;
+        }
+        data[index] *= powf(2, -fl);
+    }
 }
 
 // TODO: extend to other kinds of quantization:
 extern "C" void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type){
-	switch(type){
-		case DFP:
-			quantize_FP_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, bw, fl, mode);
-			break;
-		case POW_OF_2:
-		case TERNARY:
-		case BINARY:
-		default:
-			error("Unsupported quantization types!");
-			break;
-	}
-	check_error(cudaPeekAtLastError());
+    switch(type){
+        case DFP:
+            quantize_FP_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, bw, fl, mode);
+            break;
+        case POW_OF_2:
+        case TERNARY:
+        case BINARY:
+        default:
+            error("Quantization format not implemented yet :(");
+            break;
+    }
+    check_error(cudaPeekAtLastError());
 }
 

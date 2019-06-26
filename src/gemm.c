@@ -79,9 +79,9 @@ void gemm_nn_sp(int M, int N, int K, float ALPHA,
     int i,j,k;
     #pragma omp parallel for
     for(i = 0; i < M; ++i){
-		int start = iA[i];
-		int end = iA[i+1];
-		for(k = start; k < end; ++k){
+        int start = iA[i];
+        int end = iA[i+1];
+        for(k = start; k < end; ++k){
             register float A_PART = ALPHA*A[k];
             for(j = 0; j < N; ++j){
                 C[i*ldc+j] += A_PART*B[jA[k]*ldb+j];
@@ -166,14 +166,14 @@ void sp_gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc){
     int i, j;
-	if(BETA != 1){
-    	for(i = 0; i < M; ++i){
-        	for(j = 0; j < N; ++j){
-            	C[i*ldc + j] *= BETA;
-        	}
-    	}
-	}
-	gemm_nn_sp(M, N, K, ALPHA, A, jA, iA, lda, B, ldb, C, ldc);
+    if(BETA != 1){
+        for(i = 0; i < M; ++i){
+            for(j = 0; j < N; ++j){
+                C[i*ldc + j] *= BETA;
+            }
+        }
+    }
+    gemm_nn_sp(M, N, K, ALPHA, A, jA, iA, lda, B, ldb, C, ldc);
 }
 
 void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, 

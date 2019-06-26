@@ -106,51 +106,56 @@ typedef struct{
     int t;
 } update_args;
 
+
 typedef enum{
-	ROUND_NEAREST, ROUND_STOCHASTIC
+    SEGMENTATION, CLASSIFICATION
+} TASK_TYPE;
+
+typedef enum{
+    ROUND_NEAREST, ROUND_STOCHASTIC
 } ROUNDING_MODE;
 
 // rounding mode for the weights:
 // activations are always in dynamic fixed point
 typedef enum{
-	POW_OF_2, DFP, TERNARY, BINARY
+    POW_OF_2, DFP, TERNARY, BINARY
 } QUANTIZATION_TYPE;
 
 // Quantization Parameters
 typedef struct{
-	int in_bw; // activation bw
-	int in_fl; // activation fractional length
-	int out_bw;
-	int out_fl;
-	int w_bw;
-	int w_fl;
-	ROUNDING_MODE mode;
-	QUANTIZATION_TYPE a_type;
-	QUANTIZATION_TYPE w_type;
-	float *weight_copy;
-	float *bias_copy;
+    int in_bw; // activation bw
+    int in_fl; // activation fractional length
+    int out_bw;
+    int out_fl;
+    int w_bw;
+    int w_fl;
+    ROUNDING_MODE mode;
+    QUANTIZATION_TYPE a_type;
+    QUANTIZATION_TYPE w_type;
+    float *weight_copy;
+    float *bias_copy;
 #ifdef GPU
-	float *weight_copy_gpu;
-	float *bias_copy_gpu;
+    float *weight_copy_gpu;
+    float *bias_copy_gpu;
 #endif
 
 } quantize_params;
 
 typedef enum{
-	CSR, CSC
+    CSR, CSC
 } COMPRESSION_TYPE;
 // Compressed weights
 typedef struct{
-	COMPRESSION_TYPE type;
-	int nnz;
-	int n; // number of rows or columns + 1
-	float *w;
-	int *jw;
-	int *iw;
+    COMPRESSION_TYPE type;
+    int nnz;
+    int n; // number of rows or columns + 1
+    float *w;
+    int *jw;
+    int *iw;
 #ifdef GPU
-	float *weights_gpu;
-	int *jw_gpu;
-	int *iw_gpu;
+    float *weights_gpu;
+    int *jw_gpu;
+    int *iw_gpu;
 #endif
 } compressed_weights;
 
@@ -259,8 +264,6 @@ struct layer{
     int   * indexes;
     int   * input_layers;
     int   * input_sizes;
-	// (htann404) for channel shuffling
-	int	  * output_ordering;
     int   * map;
     int   * counts;
     float ** sums;
@@ -279,17 +282,17 @@ struct layer{
 
     float * binary_weights;
     quantize_params * quantize;
-	
+    
     float * biases;
     float * bias_updates;
 
     float * scales;
     float * scale_updates;
 
-	compressed_weights *weights_c;
+    compressed_weights *weights_c;
     float * weights;
     float * weight_updates;
-	float * weight_prune_mask;
+    float * weight_prune_mask;
 
     float * delta;
     float * output;
@@ -364,7 +367,7 @@ struct layer{
 
     struct layer *input_h_layer;
     struct layer *state_h_layer;
-	
+    
     struct layer *wz;
     struct layer *uz;
     struct layer *wr;
@@ -445,7 +448,7 @@ struct layer{
     float * weights_gpu;
     float * weight_updates_gpu;
     float * weight_change_gpu;
-	float * weight_prune_mask_gpu;
+    float * weight_prune_mask_gpu;
 
     float * biases_gpu;
     float * bias_updates_gpu;
@@ -531,9 +534,7 @@ typedef struct network{
     int gpu_index;
     tree *hierarchy;
 
-	// (htann404) for channel shuffling.
-	int shuffled_channels;
-	int* shuffled_layers;
+    int quantized;
 
     float *input;
     float *truth;
@@ -543,7 +544,7 @@ typedef struct network{
     int index;
     float *cost;
     float clip;
-
+ 
 #ifdef GPU
     float *input_gpu;
     float *truth_gpu;
@@ -577,19 +578,17 @@ typedef struct{
 // htann: profiler for channel shuffling
 typedef struct {
     int layer_index;
-	LAYER_TYPE type;
-	int batch;
+    LAYER_TYPE type;
+    int batch;
     int n,h,w,c;
-	// intended ordering of the output channel
-	int *ordering;
-	// max activaitons:
-	float max_activation;
-	float val99_activation;
-	// max weights:
-	float max_weight;
-	float val99_weight;
-	float max_bias;
-	float val99_bias;
+    // max activaitons:
+    float max_activation;
+    float val99_activation;
+    // max weights:
+    float max_weight;
+    float val99_weight;
+    float max_bias;
+    float val99_bias;
     float *activations;
 } profiler;
 
@@ -687,12 +686,14 @@ data resize_data(data orig, int w, int h);
 data *tile_data(data orig, int divs, int size);
 data select_data(data *orig, int *inds);
 
-// quantization stuffs
+// pruning and quantization stuffs
 void init_prune_mask(network *net, int from_scratch);
 void read_quantized_net_cfg(network *net, char *filename);
 void allocate_quantized_weight_copy(network *net);
 float train_network_quantized(network *net, data d);
 void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float *results);
+void validate_classifier_from_net(network net_in, int topk, load_args args, float *results);
+load_args set_load_args(TASK_TYPE task, network *net, char **paths, list *options, int N);
 #ifndef NUM_SEG_ACCURACY_ELEMENTS
 #define NUM_SEG_ACCURACY_ELEMENTS 5
 #endif
@@ -771,10 +772,10 @@ int option_find_int_quiet(list *l, char *key, int def);
 
 network *parse_network_cfg(char *filename);
 void save_weights(network *net, char *filename);
-void save_weights_shuffled(network *net, char *filename, profiler *prof, int num);
 void load_weights(network *net, char *filename);
 void save_weights_upto(network *net, char *filename, int cutoff);
 void load_weights_upto(network *net, char *filename, int start, int cutoff);
+void save_compressed_weights(network *net, char *filename, int q, int cutoff);
 
 void zero_objectness(layer l);
 void get_region_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, float tree_thresh, int relative, detection *dets);

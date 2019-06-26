@@ -1083,6 +1083,47 @@ void save_weights(network *net, char *filename)
     save_weights_upto(net, filename, net->n);
 }
 
+//write as int8 for now
+void save_quantized_weights(network *net, char *filename){
+
+}
+
+void save_compressed_weights(network *net, char *filename, int q, int cutoff)
+{
+    fprintf(stderr, "Saving weights to %s\n", filename);
+    FILE *fp = fopen(filename, "wb");
+    if(!fp) file_error(filename);
+
+    int major = 0;
+    int minor = 2;
+    int revision = 0;
+    fwrite(&major, sizeof(int), 1, fp);
+    fwrite(&minor, sizeof(int), 1, fp);
+    fwrite(&revision, sizeof(int), 1, fp);
+    fwrite(net->seen, sizeof(size_t), 1, fp);
+
+    size_t wsize = (q) ? sizeof(char) : sizeof(float);
+    int i;
+    for(i = 0; i < net->n && i < cutoff; ++i){
+        layer l = net->layers[i];
+        if (l.dontsave) continue;
+        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
+            fwrite(l.biases, sizeof(float), l.n, fp);
+        } if(l.type == CONNECTED){
+            fwrite(l.biases, sizeof(float), l.outputs, fp);
+        } if(l.type == BATCHNORM){
+            save_batchnorm_weights(l, fp);
+            continue;
+        }
+        fwrite(&(l.weights_c->nnz), sizeof(int), 1, fp);
+        fwrite(&(l.weights_c->n), sizeof(int), 1, fp);
+        fwrite(l.weights_c->w, sizeof(wsize), l.weights_c->nnz, fp);
+        fwrite(l.weights_c->jw, sizeof(int), l.weights_c->nnz, fp);
+        fwrite(l.weights_c->iw, sizeof(int), l.weights_c->n+1, fp);
+    }
+    fclose(fp);
+}
+
 void transpose_matrix(float *a, int rows, int cols)
 {
     float *transpose = calloc(rows*cols, sizeof(float));

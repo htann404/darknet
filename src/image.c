@@ -1320,7 +1320,7 @@ image load_image_signed(char *filename, int width, int height, int channel)
     unsigned char *data = stbi_load(filename, &w, &h, &c, channel);
     if (!data) {
         fprintf(stderr, "Cannot load image \"%s\"\nSTB Reason: %s\n",
-				filename, stbi_failure_reason());
+                filename, stbi_failure_reason());
         exit(0);
     }
     if(channel) c = channel;

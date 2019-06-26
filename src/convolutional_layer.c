@@ -454,11 +454,11 @@ void forward_convolutional_layer(convolutional_layer l, network net)
         binarize_cpu(net.input, l.c*l.h*l.w*l.batch, l.binary_input);
         net.input = l.binary_input;
     }
-	
-	quantize_params *q = l.quantize;
-	if(q) {
-		quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
-	}
+    
+    quantize_params *q = l.quantize;
+    if(q) {
+        quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+    }
 
     int m = l.n/l.groups;
     int k = l.size*l.size*l.c/l.groups;
@@ -476,14 +476,14 @@ void forward_convolutional_layer(convolutional_layer l, network net)
                 im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             }
 
-			if (!l.weights_c)
-				gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
-			else {
-				float *sp_a = l.weights_c->w;
-				int *ja = l.weights_c->jw;
-				int *ia = l.weights_c->iw;
-				sp_gemm_cpu(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
-			}
+            if (!l.weights_c)
+                gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+            else {
+                float *sp_a = l.weights_c->w;
+                int *ja = l.weights_c->jw;
+                int *ia = l.weights_c->iw;
+                sp_gemm_cpu(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
+            }
         }
     }
 
@@ -495,9 +495,9 @@ void forward_convolutional_layer(convolutional_layer l, network net)
 
     activate_array(l.output, l.outputs*l.batch, l.activation);
 
-	if(q) {
-		quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
-	}
+    if(q) {
+        quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+    }
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
@@ -568,8 +568,8 @@ void update_convolutional_layer(convolutional_layer l, update_args a)
     }
 
     axpy_cpu(l.nweights, -decay*batch, l.weights, 1, l.weight_updates, 1);
-	if (l.weight_prune_mask)
-		mul_cpu(l.nweights, l.weight_prune_mask, 1, l.weight_updates, 1);
+    if (l.weight_prune_mask)
+        mul_cpu(l.nweights, l.weight_prune_mask, 1, l.weight_updates, 1);
     axpy_cpu(l.nweights, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
     scal_cpu(l.nweights, momentum, l.weight_updates, 1);
 }

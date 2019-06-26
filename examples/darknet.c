@@ -456,9 +456,9 @@ int main(int argc, char **argv)
     } else if (0 == strcmp(argv[1], "segmenter")){
         run_segmenter(argc, argv);
     } else if (0 == strcmp(argv[1], "prune")){
-    	run_pruning(argc, argv);
+        run_pruning(argc, argv);
     } else if (0 == strcmp(argv[1], "quantize")){
-    	run_quantizer(argc, argv);
+        run_quantizer(argc, argv);
     } else if (0 == strcmp(argv[1], "art")){
         run_art(argc, argv);
     } else if (0 == strcmp(argv[1], "tag")){

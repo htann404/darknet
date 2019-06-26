@@ -144,9 +144,9 @@ void update_connected_layer(layer l, update_args a)
     }
 
     axpy_cpu(l.inputs*l.outputs, -decay*batch, l.weights, 1, l.weight_updates, 1);
- 	if (l.weight_prune_mask)
-		mul_cpu(l.inputs*l.outputs, l.weight_prune_mask, 1, l.weight_updates, 1);
-	axpy_cpu(l.inputs*l.outputs, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
+     if (l.weight_prune_mask)
+        mul_cpu(l.inputs*l.outputs, l.weight_prune_mask, 1, l.weight_updates, 1);
+    axpy_cpu(l.inputs*l.outputs, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
     scal_cpu(l.inputs*l.outputs, momentum, l.weight_updates, 1);
 }
 
@@ -160,10 +160,10 @@ void forward_connected_layer(layer l, network net)
     float *b = l.weights;
     float *c = l.output;
 
-	quantize_params *q = l.quantize;
-	if(q) {
-		quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
-	}
+    quantize_params *q = l.quantize;
+    if(q) {
+        quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+    }
 
     gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);
     if(l.batch_normalize){
@@ -173,9 +173,9 @@ void forward_connected_layer(layer l, network net)
     }
     activate_array(l.output, l.outputs*l.batch, l.activation);
 
-	if(q) {
-		quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
-	}
+    if(q) {
+        quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+    }
 }
 
 void backward_connected_layer(layer l, network net)
@@ -292,9 +292,9 @@ void update_connected_layer_gpu(layer l, update_args a)
         }
 
         axpy_gpu(l.inputs*l.outputs, -decay*batch, l.weights_gpu, 1, l.weight_updates_gpu, 1);
-		if(l.weight_prune_mask_gpu)
-			mul_gpu(l.inputs*l.outputs, l.weight_prune_mask_gpu, 1, l.weight_updates_gpu, 1);
-		axpy_gpu(l.inputs*l.outputs, learning_rate/batch, l.weight_updates_gpu, 1, l.weights_gpu, 1);
+        if(l.weight_prune_mask_gpu)
+            mul_gpu(l.inputs*l.outputs, l.weight_prune_mask_gpu, 1, l.weight_updates_gpu, 1);
+        axpy_gpu(l.inputs*l.outputs, learning_rate/batch, l.weight_updates_gpu, 1, l.weights_gpu, 1);
         scal_gpu(l.inputs*l.outputs, momentum, l.weight_updates_gpu, 1);
     }
 }
@@ -309,11 +309,11 @@ void forward_connected_layer_gpu(layer l, network net)
     float * a = net.input_gpu;
     float * b = l.weights_gpu;
     float * c = l.output_gpu;
-	
-	quantize_params *q = l.quantize;
-	if(q) {
-		quantize_gpu(net.input_gpu, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
-	}
+    
+    quantize_params *q = l.quantize;
+    if(q) {
+        quantize_gpu(net.input_gpu, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+    }
     gemm_gpu(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
     if (l.batch_normalize) {
@@ -323,9 +323,9 @@ void forward_connected_layer_gpu(layer l, network net)
     }
     activate_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation);
 
-	if(q) {
-		quantize_gpu(net.output_gpu, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
-	}
+    if(q) {
+        quantize_gpu(net.output_gpu, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+    }
 }
 
 void backward_connected_layer_gpu(layer l, network net)

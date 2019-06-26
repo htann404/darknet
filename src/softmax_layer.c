@@ -47,10 +47,10 @@ void forward_softmax_layer(const softmax_layer l, network net)
             count += group_size;
         }
     } else {
-    	if(l.spatial){
-    		softmax_cpu(net.input, l.c, l.batch, l.inputs, l.w*l.h, 1, l.w*l.h, l.temperature, l.output);
-    	}else{
-        	softmax_cpu(net.input, l.inputs/l.groups, l.batch, l.inputs, l.groups, l.inputs/l.groups, 1, l.temperature, l.output);
+        if(l.spatial){
+            softmax_cpu(net.input, l.c, l.batch, l.inputs, l.w*l.h, 1, l.w*l.h, l.temperature, l.output);
+        }else{
+            softmax_cpu(net.input, l.inputs/l.groups, l.batch, l.inputs, l.groups, l.inputs/l.groups, 1, l.temperature, l.output);
         }
     }
 
