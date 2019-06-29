@@ -561,9 +561,11 @@ void count_using_model_cfg(char *datacfg, char *cfgfile, char *weightfile,
                            char* quantized_cfg, char *filename, int compress)
 {
     network *net = load_network(cfgfile, weightfile, 0);
-    if (net->batch > 1)
-        error("Not supporting testing with larger batch size at the moment");
     net->train = 0;
+    if (net->batch > 1){
+        set_batch_network(net, 1);
+        fprintf(stderr, "Batch size set to 1.\n");
+    }
     fold_batch_norm_params(net);
     
     if (compress)

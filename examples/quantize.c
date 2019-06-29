@@ -120,6 +120,7 @@ void fold_batch_norm_params(network *net){
 }
 
 // TODO: replace with actually generating a new cfg with quantization params
+// LIMITATION: data layer is assumed to have positive and negative vals
 void write_quantized_net_cfg(network *net, profiler *prof, char *filename) {
     FILE *fid = fopen(filename, "w");
     if(!fid) error("Unable to open file to write quantization cfg.");
@@ -363,9 +364,11 @@ void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weigh
     if(gpu>=0) cuda_set_device(gpu);
 #endif
     network *net = load_network(cfgfile, weightfile, 1);
-    set_batch_network(net, 1);
-    if (net->batch > 1)
-        error("Not supporting testing with batch size larger than 1.");
+    if (net->batch > 1){
+        set_batch_network(net, 1);
+        fprintf(stderr, "Batch size set to 1.\n");
+    }
+
     net->train = 0;    
     fold_batch_norm_params(net);
     // Initialize the quantization parameters:
@@ -629,7 +632,7 @@ void run_quantizer(int argc, char **argv)
     char *weights = (argc > 5) ? argv[5] : 0;
 
     // adhoc implementation at the moment:
-    // TODO: write new cfg file with proper quantization params
+    // TODO: write new cfg file with quantization params included
     char *quantized_cfg = (argc > 6) ? argv[6] : 0;
     char *filename = (argc > 7) ? argv[7]: 0;
     if (nq){
