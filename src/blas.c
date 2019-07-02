@@ -7,14 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef max
-#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
-#endif
-
-#ifndef min
-#define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
-#endif
-
 #define RandUniform(a,b) (((float)rand()/RAND_MAX * (b-a)) + a)
 
 void reorg_cpu(float *x, int w, int h, int c, int batch, int stride, int forward, float *out)
@@ -439,3 +431,74 @@ void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZAT
             break;
     }
 }
+
+#ifdef Dtype
+void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, int h2, int c2, int shamt0, int shamt1, Dtype *out)
+{
+    int stride = w1/w2;
+    int sample = w2/w1;
+    assert(stride == h1/h2);
+    assert(sample == h2/h1);
+    if(stride < 1) stride = 1;
+    if(sample < 1) sample = 1;
+    int minw = (w1 < w2) ? w1 : w2;
+    int minh = (h1 < h2) ? h1 : h2;
+    int minc = (c1 < c2) ? c1 : c2;
+
+    int i,j,k,b;
+    for(b = 0; b < batch; ++b){
+        for(k = 0; k < minc; ++k){
+            for(j = 0; j < minh; ++j){
+                for(i = 0; i < minw; ++i){
+                    int out_index = i*sample + w2*(j*sample + h2*(k + c2*b));
+                    int add_index = i*stride + w1*(j*stride + h1*(k + c1*b));
+                    if (shamt1 > 0)
+                        out[out_index] = out[out_index] + (add[add_index] << shamt1);
+                    else
+                        out[out_index] = out[out_index] + (add[add_index] >> -shamt1);
+                }
+            }
+        }
+    }
+}
+
+void fill_cpu_Dtype(int N, Dtype ALPHA, Dtype *X, int INCX)
+{
+    int i;
+    for(i = 0; i < N; ++i) X[i*INCX] = ALPHA;
+}
+
+void copy_cpu_Dtype(int N, Dtype *X, int INCX, Dtype *Y, int INCY)
+{
+    int i;
+    for(i = 0; i < N; ++i) Y[i*INCY] = X[i*INCX];
+}
+
+void shrink_Dtype2_to_Dtype_cpu(Dtype *x, int n, int shamt){
+
+    Dtype2 *ptr = (Dtype2 *)x;
+    Dtype2 big;
+    Dtype small;
+
+    for (int i=0; i<n; ++i){
+        big = ptr[i];
+        if (shamt > 0)
+            small = (Dtype)(big >> shamt);
+        else
+            small = (Dtype)(big << -shamt);
+        x[i] = small;
+        //x[i] = (big > 0) ? small : -small;
+    }
+}
+// TODO: assume Dtype is signed char for now!
+void make_quantized_weights_cpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type){
+    float max_mag = pow(2, bw - 1) * pow(2, -fl);
+
+    float val;
+    for (int i=0; i<n; ++i){
+        val = round(fabs(w[i])*128/max_mag);
+        w_q[i] = (Dtype)(min(127,(int)(val)));
+        w_q[i] = w[i] > 0 ? w_q[i] : -w_q[i];
+    }
+}
+#endif

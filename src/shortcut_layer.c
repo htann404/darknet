@@ -58,9 +58,25 @@ void resize_shortcut_layer(layer *l, int w, int h)
     
 }
 
+#ifdef Dtype
+void forward_shortcut_layer_Dtype(const layer *l, network *net){
+    copy_cpu_Dtype(l->outputs*l->batch, net->input_q, 1, l->output_q, 1);
+    layer *from = &(net->layers[l->index]);
+    int shamt = l->quantize->out_fl - from->quantize->out_fl;
+    // TODO: Add GPU support for this
+    shortcut_cpu_Dtype(l->batch, l->w, l->h, l->c, from->output_q, l->out_w, l->out_h, l->out_c, 0, shamt, l->output_q);
+    activate_array_Dtype(l->output_q, l->outputs*l->batch, l->activation);
+}
 
+void forward_shortcut_layer(const layer l, network net) {
+    if(net.true_q){
+        forward_shortcut_layer_Dtype(&l, &net);
+        return;
+    }
+#else
 void forward_shortcut_layer(const layer l, network net)
 {
+#endif
     copy_cpu(l.outputs*l.batch, net.input, 1, l.output, 1);
     shortcut_cpu(l.batch, l.w, l.h, l.c, net.layers[l.index].output, l.out_w, l.out_h, l.out_c, l.alpha, l.beta, l.output);
     activate_array(l.output, l.outputs*l.batch, l.activation);
@@ -76,6 +92,10 @@ void backward_shortcut_layer(const layer l, network net)
 #ifdef GPU
 void forward_shortcut_layer_gpu(const layer l, network net)
 {
+#ifdef Dtype
+    if(net.true_q)
+        error("Shortcut layer, GPU true quantization not supported at the moment");
+#endif
     copy_gpu(l.outputs*l.batch, net.input_gpu, 1, l.output_gpu, 1);
     shortcut_gpu(l.batch, l.w, l.h, l.c, net.layers[l.index].output_gpu, l.out_w, l.out_h, l.out_c, l.alpha, l.beta, l.output_gpu);
     activate_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation);

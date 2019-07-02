@@ -622,27 +622,31 @@ void count_using_model_cfg(int q, char *datacfg, char *cfgfile, char *weightfile
         double time;
 #ifdef Dtype
         image_Dtype imD, sizedD;
-        if (q) {
-            imD = load_image_signed_Dtype(filename, 0, 0, 1);
-            sizedD = letterbox_image_Dtype(imD, net->w, net->h);
+        if(q){
+            imD = load_image_color_Dtype(filename,0,0);
+            sizedD = center_crop_image_Dtype(imD, net->w, net->h);
             time = clock();
             predictions = network_predict_Dtype(net, sizedD.data);
         } else
 #endif
         {
-            im = load_image_signed(filename, 0, 0, 1);
-            sized = letterbox_image(im, net->w, net->h);
+            im = load_image_color(filename,0,0);
+            sized = center_crop_image(im, net->w, net->h);
             time = clock();
             predictions = network_predict(net, sized.data);
         }
         printf("%s: Predicted in %f seconds.\n", filename, sec(clock()-time));
         printf("Predicted: %f\n", predictions[0]);
 #ifdef Dtype
-        free_image_Dtype(imD);
-        free_image_Dtype(sizedD);
+        if(q){
+            free_image_Dtype(imD);
+            free_image_Dtype(sizedD);
+        }else
 #endif
-        free_image(im);
-        free_image(sized);
+        {
+            free_image(im);
+            free_image(sized);
+        }
     }
     count_zeros(net);
     free_network(net);

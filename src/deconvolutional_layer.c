@@ -220,8 +220,55 @@ void resize_deconvolutional_layer(layer *l, int h, int w)
     l->workspace_size = get_workspace_size(*l);
 }
 
+#ifdef Dtype
+void forward_quantized_deconvolutional_layer(const layer *l, network *net){
+    int m = l->size*l->size*l->n;
+    int n = l->h*l->w;
+    int k = l->c;
+	quantize_params *q = l->quantize;
+	if(!q) error("Deconvolutional layer: quantized params not found!");
+
+	fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
+
+	int shamt = (q->w_fl + q->in_fl) - q->out_fl;
+
+    for(int i = 0; i < l->batch; ++i){
+        Dtype *a = q->weight_q;
+        Dtype *b = net->input_q + i*l->c*l->h*l->w;
+        Dtype *c = (Dtype *)net->workspace;
+
+		if (!l->weights_c)
+        	gemm_cpu_Dtype(1,0,m,n,k,1,a,m,b,n,0,c,n);
+		else{
+			Dtype *sp_a = l->weights_c->w_q;
+			int *ja = l->weights_c->jw;
+			int *ia = l->weights_c->iw;
+			sp_gemm_cpu_Dtype(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
+		}
+
+		shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);
+
+        col2im_cpu_Dtype(c, l->out_c, l->out_h, l->out_w, l->size, 
+        				l->stride, l->pad, l->output_q+i*l->outputs);
+    }
+    if (0) { //l.batch_normalize) { // assuming batchnorm folded
+        //forward_batchnorm_layer(l, net);
+    } else {
+        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->n, l->out_w*l->out_h);
+	}
+    activate_array_Dtype(l->output_q, l->batch*l->n*l->out_w*l->out_h, l->activation);
+}
+
 void forward_deconvolutional_layer(const layer l, network net)
 {
+	if (net.true_q){
+		forward_quantized_deconvolutional_layer(&l, &net);
+		return;
+	}
+#else
+void forward_deconvolutional_layer(const layer l, network net)
+{
+#endif
     int i;
 
     int m = l.size*l.size*l.n;

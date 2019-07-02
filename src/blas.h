@@ -2,6 +2,15 @@
 #define BLAS_H
 #include "darknet.h"
 
+#ifndef max
+#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
+#endif
+
+#ifndef min
+#define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
+#endif
+
+
 void flatten(float *x, int size, int layers, int batch, int forward);
 void pm(int M, int N, float *A);
 float *random_matrix(int rows, int cols);
@@ -46,6 +55,11 @@ void softmax_cpu(float *input, int n, int batch, int batch_offset, int groups, i
 void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out);
 
 void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+#ifdef Dtype
+void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, int h2, int c2, int s1, int s2, Dtype *out);
+void shrink_Dtype2_to_Dtype_cpu(Dtype *x, int n, int shamt);
+void make_quantized_weights_cpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+#endif
 
 #ifdef GPU
 #include "cuda.h"
@@ -106,6 +120,10 @@ void upsample_gpu(float *in, int w, int h, int c, int batch, int stride, int for
 
 
 void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
-
+#ifdef Dtype
+void make_quantized_weights_gpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+void copy_gpu_offset_Dtype(int N, Dtype * X, int OFFX, int INCX, Dtype * Y, int OFFY, int INCY);
+void copy_gpu_Dtype(int N, Dtype * X, int INCX, Dtype * Y, int INCY);
+#endif
 #endif
 #endif

@@ -442,8 +442,78 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
     }
 }
 
+#ifdef Dtype
+void add_bias_Dtype(Dtype *output, Dtype *biases, int batch, int n, int size)
+{
+    int i,j,b;
+    for(b = 0; b < batch; ++b){
+        for(i = 0; i < n; ++i){
+            for(j = 0; j < size; ++j){
+                output[(b*n + i)*size + j] += biases[i];
+            }
+        }
+    }
+}
+
+void forward_quantized_convolutional_layer(convolutional_layer *l, network* net){
+    int i,j;
+
+    fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
+
+	quantize_params *q = l->quantize;
+	if(!q) error("Convolutional layer: quantized params not found!");
+
+    int m = l->n/l->groups;
+    int k = l->size*l->size*l->c/l->groups;
+    int n = l->out_w*l->out_h;
+	int shamt = (q->w_fl + q->in_fl) - q->out_fl;
+
+    for(i = 0; i < l->batch; ++i){
+        for(j = 0; j < l->groups; ++j){
+            Dtype *a = q->weight_q + j*l->nweights/l->groups;
+            Dtype *b = (Dtype *)net->workspace;
+            Dtype *c = l->output_q + (i*l->groups + j)*n*m;
+            Dtype *im = net->input_q + (i*l->groups + j)*l->c/l->groups*l->h*l->w;
+
+            if (l->size == 1) {
+                b = im;
+            } else {
+                im2col_cpu_Dtype(im, l->c/l->groups, l->h, l->w, l->size, l->stride, l->pad, b);
+            }
+
+			if (!l->weights_c)
+				gemm_cpu_Dtype(0,0,m,n,k,1,a,k,b,n,1,c,n);
+			else {
+				Dtype *sp_a = l->weights_c->w_q;
+				int *ja = l->weights_c->jw;
+				int *ia = l->weights_c->iw;
+				sp_gemm_cpu_Dtype(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
+			}
+
+			// the output of GEMM has datatype Dtype2
+			shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);	
+        }
+    }
+    if (0) { //l.batch_normalize) { // assuming batchnorm folded
+        //forward_batchnorm_layer(l, net);
+    } else {
+        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->n, l->out_h*l->out_w);
+    }
+
+    activate_array_Dtype(l->output_q, l->outputs*l->batch, l->activation);
+}
+
+
 void forward_convolutional_layer(convolutional_layer l, network net)
 {
+	if (net.true_q){
+		forward_quantized_convolutional_layer(&l, &net);
+		return;
+	}
+#else
+void forward_convolutional_layer(convolutional_layer l, network net)
+{
+#endif
     int i, j;
 
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);

@@ -18,8 +18,8 @@ layer make_activation_layer(int batch, int inputs, ACTIVATION activation)
     l.outputs = inputs;
     l.batch=batch;
 
-    l.output = calloc(batch*inputs, sizeof(float*));
-    l.delta = calloc(batch*inputs, sizeof(float*));
+    l.output = calloc(batch*inputs, sizeof(float));
+    l.delta = calloc(batch*inputs, sizeof(float));
 
     l.forward = forward_activation_layer;
     l.backward = backward_activation_layer;
@@ -37,6 +37,13 @@ layer make_activation_layer(int batch, int inputs, ACTIVATION activation)
 
 void forward_activation_layer(layer l, network net)
 {
+#ifdef Dtype
+    if(net.true_q){
+        copy_cpu_Dtype(l.outputs*l.batch, net.input_q, 1, l.output_q, 1);
+        activate_array_Dtype(l.output_q, l.outputs*l.batch, l.activation);
+        return;
+    }
+#endif
     copy_cpu(l.outputs*l.batch, net.input, 1, l.output, 1);
     activate_array(l.output, l.outputs*l.batch, l.activation);
 }
@@ -51,6 +58,13 @@ void backward_activation_layer(layer l, network net)
 
 void forward_activation_layer_gpu(layer l, network net)
 {
+#ifdef Dtype
+    if (net.true_q){
+        copy_gpu_Dtype(l.outputs*l.batch, net.input_q_gpu, 1, l.output_q_gpu, 1);
+        activate_array_gpu_Dtype(l.output_q_gpu, l.outputs*l.batch, l.activation);
+        return;
+    }
+#endif
     copy_gpu(l.outputs*l.batch, net.input_gpu, 1, l.output_gpu, 1);
     activate_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation);
 }

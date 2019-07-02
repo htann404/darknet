@@ -54,18 +54,29 @@ void free_layer(layer l)
     if(l.binary_input)       free(l.binary_input);
     
     if(l.weights_c){
-        if (l.weights_c->w)        free(l.weights_c->w);
+        if (l.weights_c->w)     free(l.weights_c->w);
         if (l.weights_c->jw)    free(l.weights_c->jw);
         if (l.weights_c->iw)    free(l.weights_c->iw);
+#ifdef Dtype
+        if (l.weights_c->w_q)   free(l.weights_c->w_q);
+#endif
         free(l.weights_c);
     }
 
     if(l.quantize){
         if (l.quantize->weight_copy)     free(l.quantize->weight_copy);
         if (l.quantize->bias_copy)       free(l.quantize->bias_copy);
+#ifdef Dtype
+        if (l.quantize->weight_q)         free(l.quantize->weight_q);
+        if (l.quantize->bias_q)           free(l.quantize->bias_q);
+#endif
 #ifdef GPU
         if (l.quantize->weight_copy_gpu) cuda_free(l.quantize->weight_copy_gpu);
         if (l.quantize->bias_copy_gpu)   cuda_free(l.quantize->bias_copy_gpu);
+#ifdef Dtype
+        if (l.quantize->weight_q_gpu)         cuda_free_Dtype(l.quantize->weight_q_gpu);
+        if (l.quantize->bias_q_gpu)           cuda_free_Dtype(l.quantize->bias_q_gpu);
+#endif
 #endif
         free(l.quantize);
     }

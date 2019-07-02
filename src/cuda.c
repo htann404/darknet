@@ -172,6 +172,38 @@ float cuda_mag_array(float *x_gpu, size_t n)
     free(temp);
     return m;
 }
+
+#ifdef Dtype
+void cuda_free_Dtype(Dtype *x_gpu)
+{
+    cudaError_t status = cudaFree(x_gpu);
+    check_error(status);
+}
+
+Dtype *cuda_make_array_Dtype(Dtype *x, size_t n)
+{
+    Dtype *x_gpu;
+    size_t size = sizeof(Dtype)*n;
+    cudaError_t status = cudaMalloc((void **)&x_gpu, size);
+    check_error(status);
+    if(x){
+        status = cudaMemcpy(x_gpu, x, size, cudaMemcpyHostToDevice);
+        check_error(status);
+    } else {
+        fill_gpu_Dtype(n, 0, x_gpu, 1);
+    }
+    if(!x_gpu) error("Cuda malloc failed\n");
+    return x_gpu;
+}
+
+void cuda_push_array_Dtype(Dtype *x_gpu, Dtype *x, size_t n)
+{
+    size_t size = sizeof(Dtype)*n;
+    cudaError_t status = cudaMemcpy(x_gpu, x, size, cudaMemcpyHostToDevice);
+    check_error(status);
+}
+#endif
+
 #else
 void cuda_set_device(int n){}
 

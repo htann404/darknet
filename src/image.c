@@ -1495,3 +1495,123 @@ void free_image(image m)
         free(m.data);
     }
 }
+
+#ifdef Dtype
+image_Dtype make_image_Dtype(int w, int h, int c)
+{
+    image_Dtype out;
+    out.h = h;
+    out.w = w;
+    out.c = c;
+    out.data = calloc(h*w*c, sizeof(Dtype));
+    return out;
+}
+
+void free_image_Dtype(image_Dtype m)
+{
+    if(m.data){
+        free(m.data);
+    }
+}
+
+static Dtype get_pixel_Dtype(image_Dtype m, int x, int y, int c)
+{
+    assert(x < m.w && y < m.h && c < m.c);
+    return m.data[c*m.h*m.w + y*m.w + x];
+}
+
+static void set_pixel_Dtype(image_Dtype m, int x, int y, int c, Dtype val)
+{
+    if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
+    assert(x < m.w && y < m.h && c < m.c);
+    m.data[c*m.h*m.w + y*m.w + x] = val;
+}
+
+image_Dtype crop_image_Dtype(image_Dtype im, int dx, int dy, int w, int h)
+{
+    image_Dtype cropped = make_image_Dtype(w, h, im.c);
+    int i, j, k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int r = j + dy;
+                int c = i + dx;
+                Dtype val = 0;
+                r = constrain_int(r, 0, im.h-1);
+                c = constrain_int(c, 0, im.w-1);
+                val = get_pixel_Dtype(im, c, r, k);
+                set_pixel_Dtype(cropped, i, j, k, val);
+            }
+        }
+    }
+    return cropped;
+}
+
+image_Dtype resize_image_Dtype(image_Dtype im, int w, int h)
+{
+    int i;
+    image imFloat = make_image(im.w, im.h, im.c); 
+    for (i=0; i<im.w*im.h*im.c; ++i){
+        imFloat.data[i] = (float)im.data[i];
+    }
+
+    image resizedFloat = resize_image(imFloat, w, h);
+
+    image_Dtype resized = make_image_Dtype(w, h, im.c);
+    for(i=0; i<w*h*im.c; ++i){
+        resized.data[i] = (Dtype)(max(-128, min(127, (int)(resizedFloat.data[i]) )));
+    }
+    
+    free_image(imFloat);
+    free_image(resizedFloat);
+    return resized;
+}
+
+image_Dtype center_crop_image_Dtype(image_Dtype im, int w, int h)
+{
+    int m = (im.w < im.h) ? im.w : im.h;   
+    image_Dtype c = crop_image_Dtype(im, (im.w - m) / 2, (im.h - m)/2, m, m);
+    image_Dtype r = resize_image_Dtype(c, w, h);
+    free_image_Dtype(c);
+    return r;
+}
+
+image_Dtype load_image_Dtype(char *filename, int width, int height, int channel,int bias)
+{
+    int w, h, c;
+    unsigned char *data = stbi_load(filename, &w, &h, &c, channel);
+    if (!data) {
+        fprintf(stderr, "Cannot load image \"%s\"\nSTB Reason: %s\n", filename, stbi_failure_reason());
+        exit(0);
+    }
+    if(channel) c = channel;
+    int i,j,k;
+    image_Dtype im = make_image_Dtype(w, h, c);
+    for(k = 0; k < c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int dst_index = i + w*j + w*h*k;
+                int src_index = k + c*i + c*w*j;
+                im.data[dst_index] = (Dtype)((int)data[src_index]+bias);
+            }
+        }
+    }
+    free(data);
+
+    if((height && width) && (height != im.h || width != im.w)){
+        error("Error: true quantization datapath doesn't currently support image resizing.");
+    }
+    return im;
+}
+
+image_Dtype load_image_color_Dtype(char *filename, int width, int height)
+{
+    return load_image_Dtype(filename, width, height, 3, 0);
+}
+
+image_Dtype load_image_signed_Dtype(char *filename, int width, int height, int channel)
+{
+    return load_image_Dtype(filename, width, height, channel, -128);
+}
+
+#endif

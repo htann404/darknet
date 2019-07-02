@@ -83,5 +83,15 @@ static inline float leaky_gradient(float x){return (x>0) ? 1 : .1;}
 static inline float tanh_gradient(float x){return 1-x*x;}
 static inline float plse_gradient(float x){return (x < 0 || x > 1) ? .01 : .125;}
 
+#ifdef Dtype
+static inline Dtype linear_activate_Dtype(Dtype x){return x;}
+static inline Dtype relu_activate_Dtype(Dtype x){return x*(x>0);}
+static inline Dtype leaky_activate_Dtype(Dtype x){return (x>0) ? x : .1*x;}
+void activate_array_Dtype(Dtype *x, const int n, const ACTIVATION a);
+#ifdef GPU
+void activate_array_gpu_Dtype(Dtype *x, int n, ACTIVATION a);
+#endif
+#endif
+
 #endif
 

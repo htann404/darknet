@@ -1077,3 +1077,34 @@ extern "C" void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode
     check_error(cudaPeekAtLastError());
 }
 
+#ifdef Dtype
+__global__ void fill_kernel_Dtype(int N, Dtype ALPHA, Dtype *X, int INCX)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) X[i*INCX] = ALPHA;
+}
+
+__global__ void copy_kernel_Dtype(int N,  Dtype *X, int OFFX, int INCX, Dtype *Y, int OFFY, int INCY)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) Y[i*INCY + OFFY] = X[i*INCX + OFFX];
+}
+
+extern "C" void fill_gpu_Dtype(int N, Dtype ALPHA, Dtype * X, int INCX)
+{
+    fill_kernel_Dtype<<<cuda_gridsize(N), BLOCK>>>(N, ALPHA, X, INCX);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void copy_gpu_offset_Dtype(int N, Dtype * X, int OFFX, int INCX, Dtype * Y, int OFFY, int INCY)
+{
+    copy_kernel_Dtype<<<cuda_gridsize(N), BLOCK>>>(N, X, OFFX, INCX, Y, OFFY, INCY);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void copy_gpu_Dtype(int N, Dtype * X, int INCX, Dtype * Y, int INCY)
+{
+    copy_gpu_offset_Dtype(N, X, 0, INCX, Y, 0, INCY);
+}
+
+#endif

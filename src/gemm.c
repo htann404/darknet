@@ -1,3 +1,4 @@
+#include "darknet.h"
 #include "gemm.h"
 #include "utils.h"
 #include "cuda.h"
@@ -198,6 +199,103 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     else
         gemm_tt(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
 }
+
+#ifdef Dtype
+void gemm_nn_sp_Dtype(int M, int N, int K, Dtype ALPHA, 
+        Dtype *A, int *jA, int *iA, int lda, 
+        Dtype *B, int ldb,
+        Dtype *C, int ldc)
+{
+    int i,j,k;
+    Dtype2 *C2 = (Dtype2 *)C;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        int start = iA[i];
+        int end = iA[i+1];
+        for(k = start; k < end; ++k){
+            register Dtype2 A_PART = (Dtype2)ALPHA*A[k];
+            for(j = 0; j < N; ++j){
+                C2[i*ldc+j] += (Dtype2)(A_PART*B[jA[k]*ldb+j]);
+            }
+        }
+    }
+}
+void gemm_nn_Dtype(int M, int N, int K, Dtype ALPHA, 
+        Dtype *A, int lda, 
+        Dtype *B, int ldb,
+        Dtype *C, int ldc)
+{   
+    int i,j,k;
+    Dtype2 *C2 = (Dtype2 *)C;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(k = 0; k < K; ++k){
+            register Dtype2 A_PART = (Dtype2)ALPHA*A[i*lda+k];
+            for(j = 0; j < N; ++j){
+                C2[i*ldc+j] += (Dtype2)(A_PART*B[k*ldb+j]);
+            }
+        }
+    }
+}
+
+void gemm_tn_Dtype(int M, int N, int K, Dtype ALPHA, 
+        Dtype *A, int lda, 
+        Dtype *B, int ldb,
+        Dtype *C, int ldc)
+{
+    int i,j,k;
+    Dtype2 *C2 = (Dtype2 *)C;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(k = 0; k < K; ++k){
+            register Dtype2 A_PART = (Dtype2)(ALPHA*A[k*lda+i]);
+            for(j = 0; j < N; ++j){
+                C2[i*ldc+j] += (Dtype2)A_PART*B[k*ldb+j];
+            }
+        }
+    }
+}
+
+void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
+        Dtype *A, int *jA, int *iA, int lda, 
+        Dtype *B, int ldb,
+        Dtype BETA,
+        Dtype *C, int ldc){
+    int i, j;
+    if(BETA != 1){
+        for(i = 0; i < M; ++i){
+            for(j = 0; j < N; ++j){
+                C[i*ldc + j] *= BETA;
+            }
+        }
+    }
+    gemm_nn_sp_Dtype(M, N, K, ALPHA, A, jA, iA, lda, B, ldb, C, ldc);
+}
+
+void gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
+        Dtype *A, int lda, 
+        Dtype *B, int ldb,
+        Dtype BETA,
+        Dtype *C, int ldc)
+{
+    //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    int i, j;
+    if(BETA != 1){
+        for(i = 0; i < M; ++i){
+            for(j = 0; j < N; ++j){
+                C[i*ldc + j] *= BETA;
+            }
+        }
+    }
+    if(!TA && !TB){
+        gemm_nn_Dtype(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    }else if(TA && !TB)
+        gemm_tn_Dtype(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    else{
+        error("GEMM type not yet supported for quantized datapath!");
+    }
+}
+#endif
 
 #ifdef GPU
 
