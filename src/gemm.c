@@ -204,35 +204,71 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 void gemm_nn_sp_Dtype(int M, int N, int K, Dtype ALPHA, 
         Dtype *A, int *jA, int *iA, int lda, 
         Dtype *B, int ldb,
-        Dtype *C, int ldc)
+        Dtype2 *C, int ldc)
 {
     int i,j,k;
-    Dtype2 *C2 = (Dtype2 *)C;
     #pragma omp parallel for
     for(i = 0; i < M; ++i){
         int start = iA[i];
         int end = iA[i+1];
         for(k = start; k < end; ++k){
-            register Dtype2 A_PART = (Dtype2)ALPHA*A[k];
+            register Dtype A_PART = ALPHA*A[k];
             for(j = 0; j < N; ++j){
-                C2[i*ldc+j] += (Dtype2)(A_PART*B[jA[k]*ldb+j]);
+                C[i*ldc+j] += (Dtype2)(A_PART*B[jA[k]*ldb+j]);
             }
         }
     }
 }
+
+void gemm_nt_sp_Dtype(int M, int N, int K, Dtype ALPHA,
+        Dtype *A, int lda,
+        Dtype *B, int *jB, int *iB, int ldb,
+        Dtype2 *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(j = 0; j < N; ++j){
+            int start = iB[i];
+            int end = iB[i+1];
+            register Dtype2 sum = 0;
+            for(k = start; k < end; ++k){
+                register Dtype A_PART = ALPHA*A[i*lda + jB[k]];
+                sum += (Dtype2)(A_PART*B[k]);
+            }
+            C[i*ldc+j] += sum;
+        }
+    }
+}
+
+void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA,
+        Dtype *A, int *jA, int *iA, int lda,
+        Dtype *B, int ldb,
+        Dtype BETA,
+        Dtype2 *C, int ldc){
+    if(BETA != 1 || ALPHA !=1){
+        fprintf(stderr, "Warning, only support ALPHA=BETA=1.\n");
+    }
+    if (!TB)
+        gemm_nn_sp_Dtype(M, N, K, ALPHA, A, jA, iA, lda, B, ldb, C, ldc);
+    else if (!TA && TB)
+        gemm_nt_sp_Dtype(M, N, K, ALPHA, B, ldb, A, jA, iA, lda, C, ldc);
+    else
+        error("Sparse Dtype GEMM_TT is not supported yet");
+}
+
 void gemm_nn_Dtype(int M, int N, int K, Dtype ALPHA, 
         Dtype *A, int lda, 
         Dtype *B, int ldb,
-        Dtype *C, int ldc)
+        Dtype2 *C, int ldc)
 {   
     int i,j,k;
-    Dtype2 *C2 = (Dtype2 *)C;
     #pragma omp parallel for
     for(i = 0; i < M; ++i){
         for(k = 0; k < K; ++k){
-            register Dtype2 A_PART = (Dtype2)ALPHA*A[i*lda+k];
+            register Dtype A_PART = ALPHA*A[i*lda+k];
             for(j = 0; j < N; ++j){
-                C2[i*ldc+j] += (Dtype2)(A_PART*B[k*ldb+j]);
+                C[i*ldc+j] += (Dtype2)(A_PART*B[k*ldb+j]);
             }
         }
     }
@@ -241,58 +277,58 @@ void gemm_nn_Dtype(int M, int N, int K, Dtype ALPHA,
 void gemm_tn_Dtype(int M, int N, int K, Dtype ALPHA, 
         Dtype *A, int lda, 
         Dtype *B, int ldb,
-        Dtype *C, int ldc)
+        Dtype2 *C, int ldc)
 {
     int i,j,k;
-    Dtype2 *C2 = (Dtype2 *)C;
     #pragma omp parallel for
     for(i = 0; i < M; ++i){
         for(k = 0; k < K; ++k){
-            register Dtype2 A_PART = (Dtype2)(ALPHA*A[k*lda+i]);
+            register Dtype A_PART = ALPHA*A[k*lda+i];
             for(j = 0; j < N; ++j){
-                C2[i*ldc+j] += (Dtype2)A_PART*B[k*ldb+j];
+                C[i*ldc+j] += (Dtype2)(A_PART*B[k*ldb+j]);
             }
         }
     }
 }
 
-void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
-        Dtype *A, int *jA, int *iA, int lda, 
+void gemm_nt_Dtype(int M, int N, int K, Dtype ALPHA,
+        Dtype *A, int lda,
         Dtype *B, int ldb,
-        Dtype BETA,
-        Dtype *C, int ldc){
-    int i, j;
-    if(BETA != 1){
-        for(i = 0; i < M; ++i){
-            for(j = 0; j < N; ++j){
-                C[i*ldc + j] *= BETA;
+        Dtype2 *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(j = 0; j < N; ++j){
+            register Dtype2 sum = 0;
+            for(k = 0; k < K; ++k){
+                register Dtype A_PART = ALPHA*A[i*lda+k];
+                sum += (Dtype2)(A_PART*B[j*ldb + k]);
             }
+            C[i*ldc+j] += sum;
         }
     }
-    gemm_nn_sp_Dtype(M, N, K, ALPHA, A, jA, iA, lda, B, ldb, C, ldc);
 }
 
 void gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
         Dtype *A, int lda, 
         Dtype *B, int ldb,
         Dtype BETA,
-        Dtype *C, int ldc)
+        Dtype2 *C, int ldc)
 {
-    //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
-    int i, j;
-    if(BETA != 1){
-        for(i = 0; i < M; ++i){
-            for(j = 0; j < N; ++j){
-                C[i*ldc + j] *= BETA;
-            }
-        }
+    // Tricky when ALPHA or BETA is not 1....
+    if(BETA != 1 || ALPHA !=1){
+        fprintf(stderr, "Warning, only tested with ALPHA=BETA=1.\n");
     }
     if(!TA && !TB){
         gemm_nn_Dtype(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
-    }else if(TA && !TB)
+    }else if(TA && !TB){
         gemm_tn_Dtype(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
-    else{
-        error("GEMM type not yet supported for quantized datapath!");
+    }else if(!TA && TB){
+        gemm_nt_Dtype(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    }else{
+        // gemm_tt
+        error("GEMM_TT type not yet supported for quantized datapath!");
     }
 }
 #endif

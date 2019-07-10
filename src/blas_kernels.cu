@@ -1042,8 +1042,8 @@ __global__ void quantize_FP_kernel(float *data, int cnt, int bit_width, int fl, 
     if (index < cnt) {
         // Code from Ristretto from https://github.com/pmgysel/caffe
         // https://github.com/pmgysel/caffe/blob/master/LICENSE    
-           float max_data = (powf(2, bit_width - 1) - 1) * powf(2, -fl);
-           float min_data = -powf(2, bit_width - 1) * powf(2, -fl);    
+        float max_data = (powf(2, bit_width - 1) - 1) * powf(2, -fl);
+        float min_data = -powf(2, bit_width - 1) * powf(2, -fl);
         // Saturate data
         data[index] = fmax(fmin(data[index], max_data), min_data);
         // Round data

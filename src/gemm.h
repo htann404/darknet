@@ -29,13 +29,13 @@ void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA,
         Dtype *A, int *jA, int *iA, int lda, 
         Dtype *B, int ldb,
         Dtype BETA,
-        Dtype *C, int ldc);
+        Dtype2 *C, int ldc);
 
 void gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
         Dtype *A, int lda, 
         Dtype *B, int ldb,
         Dtype BETA,
-        Dtype *C, int ldc);
+        Dtype2 *C, int ldc);
 #endif
 
 #ifdef GPU

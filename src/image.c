@@ -1576,7 +1576,7 @@ image_Dtype center_crop_image_Dtype(image_Dtype im, int w, int h)
     return r;
 }
 
-image_Dtype load_image_Dtype(char *filename, int width, int height, int channel,int bias)
+image_Dtype load_image_Dtype(char *filename, int width, int height, int channel, float bias, float div)
 {
     int w, h, c;
     unsigned char *data = stbi_load(filename, &w, &h, &c, channel);
@@ -1592,7 +1592,10 @@ image_Dtype load_image_Dtype(char *filename, int width, int height, int channel,
             for(i = 0; i < w; ++i){
                 int dst_index = i + w*j + w*h*k;
                 int src_index = k + c*i + c*w*j;
-                im.data[dst_index] = (Dtype)((int)data[src_index]+bias);
+                float d = ((float)data[src_index] + bias)/div;
+                make_quantized_weights_cpu(&d, im.data+dst_index,
+                                           1, 8, 7, ROUND_NEAREST, DFP); 
+                //im.data[dst_index] = (Dtype)((int)data[src_index]/div + bias);
             }
         }
     }
@@ -1606,12 +1609,12 @@ image_Dtype load_image_Dtype(char *filename, int width, int height, int channel,
 
 image_Dtype load_image_color_Dtype(char *filename, int width, int height)
 {
-    return load_image_Dtype(filename, width, height, 3, 0);
+    return load_image_Dtype(filename, width, height, 3, 0., 255.);
 }
 
 image_Dtype load_image_signed_Dtype(char *filename, int width, int height, int channel)
 {
-    return load_image_Dtype(filename, width, height, channel, -128);
+    return load_image_Dtype(filename, width, height, channel, -128., 255.);
 }
 
 #endif

@@ -403,7 +403,7 @@ void quantize_fixedpoint(float *x, int n, int bw, int fl, ROUNDING_MODE mode)
         x[i] = max(min(x[i], max_data), min_data);
         // Round data
         x[i] /= pow(2, -fl);
-           switch (mode) {
+        switch (mode) {
             case ROUND_NEAREST:
                   x[i] = round(x[i]);
                   break;
@@ -413,7 +413,8 @@ void quantize_fixedpoint(float *x, int n, int bw, int fl, ROUNDING_MODE mode)
                   break;
         }
         x[i] *= pow(2, -fl);
-    } 
+    }
+//#endif
 }
 
 //TODO: support more precision type
@@ -433,6 +434,39 @@ void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZAT
 }
 
 #ifdef Dtype
+void softmax_Dtype(Dtype *input, int n, float temp, int stride, float *output)
+{
+    int i;
+    float sum = 0;
+    float val;
+    float largest = -FLT_MAX;
+    for(i = 0; i < n; ++i){
+        val = (float)(input[i*stride]);
+        if(val > largest) largest = val;
+    }
+    for(i = 0; i < n; ++i){
+        val = (float)(input[i*stride]);
+        float e = exp(val/temp - largest/temp);
+        sum += e;
+        output[i*stride] = e;
+    }
+    for(i = 0; i < n; ++i){
+        output[i*stride] /= sum;
+    }
+}
+
+void softmax_cpu_Dtype(Dtype *input, int n, int batch, int batch_offset, int groups,
+                        int group_offset, int stride, float temp, float *output)
+{
+    int g, b;
+    for(b = 0; b < batch; ++b){
+        for(g = 0; g < groups; ++g){
+            softmax_Dtype(input + b*batch_offset + g*group_offset, n, temp,
+                        stride, output + b*batch_offset + g*group_offset);
+        }
+    }
+}
+
 void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, int h2, int c2, int shamt0, int shamt1, Dtype *out)
 {
     int stride = w1/w2;
@@ -465,7 +499,8 @@ void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, i
 void fill_cpu_Dtype(int N, Dtype ALPHA, Dtype *X, int INCX)
 {
     int i;
-    for(i = 0; i < N; ++i) X[i*INCX] = ALPHA;
+    Dtype2 *X2 = (Dtype2 *)X;
+    for(i = 0; i < N; ++i) X2[i*INCX] = (Dtype2)ALPHA;
 }
 
 void copy_cpu_Dtype(int N, Dtype *X, int INCX, Dtype *Y, int INCY)
@@ -474,20 +509,16 @@ void copy_cpu_Dtype(int N, Dtype *X, int INCX, Dtype *Y, int INCY)
     for(i = 0; i < N; ++i) Y[i*INCY] = X[i*INCX];
 }
 
-void shrink_Dtype2_to_Dtype_cpu(Dtype *x, int n, int shamt){
+void shrink_Dtype2_to_Dtype_cpu(Dtype2 *x, int n, int shamt){
 
-    Dtype2 *ptr = (Dtype2 *)x;
-    Dtype2 big;
-    Dtype small;
-
+    Dtype *ptr = (Dtype *)x;
+    Dtype2 val;
     for (int i=0; i<n; ++i){
-        big = ptr[i];
-        if (shamt > 0)
-            small = (Dtype)(big >> shamt);
-        else
-            small = (Dtype)(big << -shamt);
-        x[i] = small;
-        //x[i] = (big > 0) ? small : -small;
+        val = x[i];
+        if (shamt != 0){
+            val = (shamt > 0)? (val >> shamt) : (val*(1<<-shamt));
+        }
+        ptr[i] = (Dtype)(max(Dtype_MIN, min(Dtype_MAX, val)));
     }
 }
 // TODO: assume Dtype is signed char for now!

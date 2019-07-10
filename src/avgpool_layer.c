@@ -37,8 +37,35 @@ void resize_avgpool_layer(avgpool_layer *l, int w, int h)
     l->inputs = h*w*l->c;
 }
 
+#ifdef Dtype
+void forward_avgpool_layer_Dtype(const avgpool_layer *l, network *net){
+    int b,i,k;
+
+    for(b = 0; b < l->batch; ++b){
+        for(k = 0; k < l->c; ++k){
+            int out_index = k + b*l->c;
+            Dtype2 accum = 0;
+            for(i = 0; i < l->h*l->w; ++i){
+                int in_index = i + l->h*l->w*(k + b*l->c);
+                accum += net->input_q[in_index];
+            }
+            accum /= l->h*l->w;
+            l->output_q[out_index] = (Dtype)accum;
+        }
+    }
+}
+
 void forward_avgpool_layer(const avgpool_layer l, network net)
 {
+    if (net.true_q){
+        forward_avgpool_layer_Dtype(&l, &net);
+		return;
+    }
+#else
+void forward_avgpool_layer(const avgpool_layer l, network net)
+{
+#endif
+
     int b,i,k;
 
     for(b = 0; b < l.batch; ++b){

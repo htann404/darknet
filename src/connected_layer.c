@@ -150,8 +150,51 @@ void update_connected_layer(layer l, update_args a)
     scal_cpu(l.inputs*l.outputs, momentum, l.weight_updates, 1);
 }
 
+#ifdef Dtype
+void forward_quantized_connnected_layer(layer *l, network* net)
+{
+    fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
+
+    quantize_params *q = l->quantize;
+    if(!q) error("Connected layer: quantized params not found!");
+
+    int m = l->batch;
+    int k = l->inputs;
+    int n = l->outputs;
+    int shamt = (q->w_fl + q->in_fl) - q->out_fl;
+
+    Dtype *a = net->input_q;
+    Dtype *b = q->weight_q;
+    Dtype2 *c = (Dtype2 *)l->output_q;
+    if (!l->weights_c)
+        gemm_cpu_Dtype(0,1,m,n,k,1,a,k,b,k,1,c,n);
+    else {
+        Dtype *sp_b = l->weights_c->w_q;
+        int *jb = l->weights_c->jw;
+        int *ib = l->weights_c->iw;
+        sp_gemm_cpu_Dtype(0,1,m,n,k,1,sp_b,jb,ib,k,a,k,1,c,n);
+    }
+
+    if(0){//l.batch_normalize){
+        //forward_batchnorm_layer(l, net);
+    } else {
+        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->outputs, 1, shamt);
+    }
+    shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);
+    activate_array_Dtype(l->output_q, l->outputs*l->batch, l->activation);
+}
+
+
 void forward_connected_layer(layer l, network net)
 {
+    if (net.true_q){
+        forward_quantized_connnected_layer(&l, &net);
+        return;
+    }
+#else
+void forward_connected_layer(layer l, network net)
+{
+#endif
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
     int m = l.batch;
     int k = l.inputs;

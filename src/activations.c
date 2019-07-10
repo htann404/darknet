@@ -156,10 +156,10 @@ Dtype activate_Dtype(Dtype x, ACTIVATION a)
             return linear_activate_Dtype(x);
         case RELU:
             return relu_activate_Dtype(x);
-        case LEAKY:
-            return leaky_activate_Dtype(x);
+        //case LEAKY:
+        //    return leaky_activate_Dtype(x);
 		default:
-			error("Error: quantized datapath only supports LINEAR, RELU & LEAKY for now.");
+			error("Error: quantized datapath only supports LINEAR, RELU for now.");
     }
     return 0;
 }

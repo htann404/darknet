@@ -56,8 +56,9 @@ void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int for
 
 void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 #ifdef Dtype
+void softmax_cpu_Dtype(Dtype *input, int n, int batch, int batch_offset, int groups, int group_offset, int stride, float temp, float *output);
 void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, int h2, int c2, int s1, int s2, Dtype *out);
-void shrink_Dtype2_to_Dtype_cpu(Dtype *x, int n, int shamt);
+void shrink_Dtype2_to_Dtype_cpu(Dtype2 *x, int n, int shamt);
 void make_quantized_weights_cpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 #endif
 

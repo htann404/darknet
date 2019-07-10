@@ -40,8 +40,8 @@ void col2im_cpu(float* data_col,
 }
 
 #ifdef Dtype
-void col2im_add_pixel_Dtype(Dtype *im, int height, int width, int channels,
-                        int row, int col, int channel, int pad, Dtype val)
+void col2im_add_pixel_Dtype(Dtype2 *im, int height, int width, int channels,
+                        int row, int col, int channel, int pad, Dtype2 val)
 {
     row -= pad;
     col -= pad;
@@ -51,9 +51,9 @@ void col2im_add_pixel_Dtype(Dtype *im, int height, int width, int channels,
     im[col + width*(row + height*channel)] += val;
 }
 
-void col2im_cpu_Dtype(Dtype* data_col,
+void col2im_cpu_Dtype(Dtype2* data_col,
          int channels,  int height,  int width,
-         int ksize,  int stride, int pad, Dtype* data_im) 
+         int ksize,  int stride, int pad, Dtype2* data_im)
 {
     int c,h,w;
     int height_col = (height + 2*pad - ksize) / stride + 1;
@@ -69,7 +69,7 @@ void col2im_cpu_Dtype(Dtype* data_col,
                 int im_row = h_offset + h * stride;
                 int im_col = w_offset + w * stride;
                 int col_index = (c * height_col + h) * width_col + w;
-                double val = data_col[col_index];
+                Dtype2 val = data_col[col_index];
                 col2im_add_pixel_Dtype(data_im, height, width, channels,
                         im_row, im_col, c_im, pad, val);
             }

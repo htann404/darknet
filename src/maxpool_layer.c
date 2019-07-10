@@ -93,6 +93,9 @@ void forward_maxpool_layer(const maxpool_layer l, network net)
                     int out_index = j + w*(i + h*(k + c*b));
                     float max = -FLT_MAX;
                     int max_i = -1;
+#ifdef Dtype
+                    Dtype maxD = Dtype_MIN;
+#endif
                     for(n = 0; n < l.size; ++n){
                         for(m = 0; m < l.size; ++m){
                             int cur_h = h_offset + i*l.stride + n;
@@ -100,12 +103,26 @@ void forward_maxpool_layer(const maxpool_layer l, network net)
                             int index = cur_w + l.w*(cur_h + l.h*(k + b*l.c));
                             int valid = (cur_h >= 0 && cur_h < l.h &&
                                          cur_w >= 0 && cur_w < l.w);
-                            float val = (valid != 0) ? net.input[index] : -FLT_MAX;
-                            max_i = (val > max) ? index : max_i;
-                            max   = (val > max) ? val   : max;
+#ifdef Dtype
+                            if (net.true_q){
+                                Dtype valD = (valid != 0)? net.input_q[index] : Dtype_MIN;
+                                max_i = (valD > maxD) ? index : max_i;
+                                maxD   = (valD > maxD) ? valD : maxD;
+                            }else
+#endif
+                            {
+                                float val = (valid != 0) ? net.input[index] : -FLT_MAX;
+                                max_i = (val > max) ? index : max_i;
+                                max   = (val > max) ? val   : max;
+                            }
                         }
                     }
-                    l.output[out_index] = max;
+#ifdef Dtype
+                    if (net.true_q)
+                        l.output_q[out_index] = maxD;
+                    else
+#endif
+                        l.output[out_index] = max;
                     l.indexes[out_index] = max_i;
                 }
             }
