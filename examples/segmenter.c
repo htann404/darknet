@@ -2,6 +2,82 @@
 #include <sys/time.h>
 #include <assert.h>
 
+// compute True Positive, False Positive, etc for segmentation
+void calc_TPFP_TNFN(network *net, int n, float *rate)
+{
+    if (!net->truth){
+        fprintf(stderr, "Warning, no ground truth data for accuracy computation!\n");
+        return;
+    }
+    float *output = net->output;
+    float *truth = net->truth;
+    int size = net->h*net->w;
+    for (int i=0; i<net->batch; ++i){
+        int TP=0, FP=0, TN=0, FN=0;
+        int offset = i*net->outputs + size;
+        for (int j=offset; j < offset + size; ++j){
+            if (output[j] > 0.5 && truth[j] > 0.5){
+                TP += 1;
+            }else if(output[j] > 0.5 && truth[j] < 0.5){
+                FP += 1;
+            }else if(output[j] < 0.5 && truth[j] > 0.5){
+                FN += 1;
+            }else{
+                TN += 1;
+            }
+        }
+        float precision = (float)TP/(TP+FP);
+        float recall = (float)TP/(TP+FN);
+        // compute Precision and Recall:
+        rate[0] += precision;
+        rate[1] += recall;
+        // F-1 measure
+        rate[2] += 2*(precision*recall)/(precision+recall);
+        // E-1 accuracy rate
+        rate[3] += (float)(FP+FN)/size;
+        rate[4] += (float)(FP+FN)/size/2;
+    }
+}
+
+void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float *results)
+{
+    data train;
+    data buffer;
+    pthread_t load_thread;
+    load_args args = *arguments;
+    args.d = &buffer;
+    load_thread = load_data(args);
+
+    long int seen = *net->seen;
+    *net->seen = 0;
+
+    int epoch = 0;
+    while(epoch == 0){
+        pthread_join(load_thread, 0);
+        train = buffer;
+        load_thread = load_data(args);
+
+        assert(train.X.rows % net->batch == 0);
+        int batch = net->batch;
+        int n = train.X.rows / batch;
+        for(int i = 0; i < n; ++i){
+            get_next_batch(train, batch, i*batch, net->input, net->truth);
+            *net->seen += net->batch;
+            forward_network(net);
+            // compute F-measures, Recall, Precision, E1 and E2:
+            calc_TPFP_TNFN(net, net->batch*net->outputs, results);
+        }
+        free_data(train);
+        epoch = *net->seen/N;
+    }
+
+    assert(*net->seen > 0);
+    for (int j=0; j<5; ++j){
+        results[j] /= (float)(*net->seen);
+    }
+    *net->seen = seen;
+}
+
 void train_segmenter(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int display)
 {
     int i;

@@ -175,25 +175,23 @@ void forward_quantized_connnected_layer(layer *l, network* net)
         sp_gemm_cpu_Dtype(0,1,m,n,k,1,sp_b,jb,ib,k,a,k,1,c,n);
     }
 
-    if(0){//l.batch_normalize){
-        //forward_batchnorm_layer(l, net);
-    } else {
-        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->outputs, 1, shamt);
+    if(l->batch_normalize){
+        forward_batchnorm_layer(*l, *net);
     }
-    shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);
+    align_Dtype2_radix_cpu((Dtype2 *)l->output_q, l->batch*l->outputs, shamt);
+    add_bias_Dtype2((Dtype2 *)l->output_q, q->bias_q, l->batch, l->outputs, 1);
+    shrink_Dtype2_to_Dtype_cpu((Dtype2 *)l->output_q, l->batch*l->outputs, 0);
     activate_array_Dtype(l->output_q, l->outputs*l->batch, l->activation);
 }
-
+#endif
 
 void forward_connected_layer(layer l, network net)
 {
+#ifdef Dtype
     if (net.true_q){
         forward_quantized_connnected_layer(&l, &net);
         return;
     }
-#else
-void forward_connected_layer(layer l, network net)
-{
 #endif
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
     int m = l.batch;

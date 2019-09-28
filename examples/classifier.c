@@ -325,14 +325,29 @@ void validate_classifier_from_net(network net_in, int topk,
                 break;
             }
         }
-        image im = load_image_color(paths[i], 0, 0);
-        image crop = center_crop_image(im, net->w, net->h);
-        
-        float *pred = network_predict(net, crop.data);
-        if(net->hierarchy) hierarchy_predictions(pred, net->outputs, net->hierarchy, 1, 1);
+        float *pred;
+#ifdef Dtype
+        if (net->true_q) {
+            image_Dtype imD, cropD;
+            imD = load_image_color_Dtype(paths[i], 0, 0);
+            cropD = center_crop_image_Dtype(imD, net->w, net->h);
+            pred = network_predict_Dtype(net, cropD.data);
+            free_image_Dtype(imD);
+            free_image_Dtype(cropD);
+        }else
+#endif
+        {
+            image im, crop;
+            im = load_image_color(paths[i], 0, 0);
+            crop = center_crop_image(im, net->w, net->h);
+            pred = network_predict(net, crop.data);
+            free_image(im);
+            free_image(crop);
+        }
+        // not implemented
+        //if(net->hierarchy)
+              //hierarchy_predictions(pred, net->outputs, net->hierarchy, 1, 1);
 
-        free_image(im);
-        free_image(crop);
         top_k(pred, classes, topk, indexes);
 
         if(indexes[0] == class) avg_acc += 1;
@@ -343,6 +358,7 @@ void validate_classifier_from_net(network net_in, int topk,
     free(indexes);
     results[0] = avg_acc/m; results[1] = avg_topk/m;
     printf("%d: top 1: %f, top %d: %f\n", i, results[0], topk, results[1]);
+
 }
 
 void validate_classifier_full(char *datacfg, char *filename, char *weightfile)

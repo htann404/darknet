@@ -17,6 +17,10 @@ void im2col_cpu_Dtype(Dtype* data_im,
 void im2col_gpu(float *im,
          int channels, int height, int width,
          int ksize, int stride, int pad,float *data_col);
-
+#ifdef Dtype
+void im2col_Dtype_gpu(Dtype *im,
+         int channels, int height, int width,
+         int ksize, int stride, int pad, Dtype *data_col);
+#endif
 #endif
 #endif

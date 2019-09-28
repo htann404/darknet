@@ -37,8 +37,8 @@ layer make_deconvolutional_layer(int batch, int h, int w, int c, int n, int grou
     int i;
     layer l = {0};
     l.type = DECONVOLUTIONAL;
-	
-	l.groups = groups;
+
+    l.groups = groups;
     l.h = h;
     l.w = w;
     l.c = c;
@@ -225,76 +225,76 @@ void forward_quantized_deconvolutional_layer(const layer *l, network *net){
     int m = l->size*l->size*l->n;
     int n = l->h*l->w;
     int k = l->c;
-	quantize_params *q = l->quantize;
-	if(!q) error("Deconvolutional layer: quantized params not found!");
+    quantize_params *q = l->quantize;
+    if(!q) error("Deconvolutional layer: quantized params not found!");
 
-	fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
+    fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
 
-	int shamt = (q->w_fl + q->in_fl) - q->out_fl;
+    int shamt = (q->w_fl + q->in_fl) - q->out_fl;
 
     for(int i = 0; i < l->batch; ++i){
         Dtype *a = q->weight_q;
         Dtype *b = net->input_q + i*l->c*l->h*l->w;
-        Dtype *c = (Dtype *)net->workspace;
+        Dtype2 *c = (Dtype2 *)net->workspace;
 
-		if (!l->weights_c)
-        	gemm_cpu_Dtype(1,0,m,n,k,1,a,m,b,n,0,c,n);
-		else{
-			Dtype *sp_a = l->weights_c->w_q;
-			int *ja = l->weights_c->jw;
-			int *ia = l->weights_c->iw;
-			sp_gemm_cpu_Dtype(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
-		}
+        if (!l->weights_c)
+            gemm_cpu_Dtype(1,0,m,n,k,1,a,m,b,n,0,c,n);
+        else{
+            Dtype *sp_a = l->weights_c->w_q;
+            int *ja = l->weights_c->jw;
+            int *ia = l->weights_c->iw;
+            sp_gemm_cpu_Dtype(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
+        }
 
-		shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);
+        //shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);
 
         col2im_cpu_Dtype(c, l->out_c, l->out_h, l->out_w, l->size, 
-        				l->stride, l->pad, l->output_q+i*l->outputs);
+                        l->stride, l->pad, (Dtype2 *)l->output_q + i*l->outputs);
     }
-    if (0) { //l.batch_normalize) { // assuming batchnorm folded
-        //forward_batchnorm_layer(l, net);
-    } else {
-        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->n, l->out_w*l->out_h);
-	}
+    if (l->batch_normalize) {
+        forward_batchnorm_layer(*l, *net);
+    }
+    align_Dtype2_radix_cpu((Dtype2 *)l->output_q, l->batch*l->n*l->out_w*l->out_h, shamt);
+    add_bias_Dtype2((Dtype2 *)l->output_q, q->bias_q, l->batch, l->n, l->out_w*l->out_h);
+    shrink_Dtype2_to_Dtype_cpu((Dtype2 *)l->output_q, l->batch*l->n*l->out_w*l->out_h, 0); 
     activate_array_Dtype(l->output_q, l->batch*l->n*l->out_w*l->out_h, l->activation);
 }
+#endif
 
 void forward_deconvolutional_layer(const layer l, network net)
 {
-	if (net.true_q){
-		forward_quantized_deconvolutional_layer(&l, &net);
-		return;
-	}
-#else
-void forward_deconvolutional_layer(const layer l, network net)
-{
+#ifdef Dtype
+    if (net.true_q){
+        forward_quantized_deconvolutional_layer(&l, &net);
+        return;
+    }
 #endif
     int i;
 
     int m = l.size*l.size*l.n;
     int n = l.h*l.w;
     int k = l.c;
-	
-	quantize_params *q = l.quantize;
-	if(q) {
-		quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
-	}
     
-	fill_cpu(l.outputs*l.batch, 0, l.output, 1);
+    quantize_params *q = l.quantize;
+    if(q) {
+        quantize_cpu(net.input, l.inputs*l.batch, q->in_bw, q->in_fl, q->mode, q->a_type);
+    }
+    
+    fill_cpu(l.outputs*l.batch, 0, l.output, 1);
 
     for(i = 0; i < l.batch; ++i){
         float *a = l.weights;
         float *b = net.input + i*l.c*l.h*l.w;
         float *c = net.workspace;
 
-		if (!l.weights_c)
-        	gemm_cpu(1,0,m,n,k,1,a,m,b,n,0,c,n);
-		else{
-			float *sp_a = l.weights_c->w;
-			int *ja = l.weights_c->jw;
-			int *ia = l.weights_c->iw;
-			sp_gemm_cpu(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
-		}
+        if (!l.weights_c)
+            gemm_cpu(1,0,m,n,k,1,a,m,b,n,0,c,n);
+        else{
+            float *sp_a = l.weights_c->w;
+            int *ja = l.weights_c->jw;
+            int *ia = l.weights_c->iw;
+            sp_gemm_cpu(1,0,m,n,k,1,sp_a,ja,ia,m,b,n,0,c,n);
+        }
 
         col2im_cpu(net.workspace, l.out_c, l.out_h, l.out_w, l.size, l.stride, l.pad, l.output+i*l.outputs);
     }
@@ -304,10 +304,10 @@ void forward_deconvolutional_layer(const layer l, network net)
         add_bias(l.output, l.biases, l.batch, l.n, l.out_w*l.out_h);
     }
     activate_array(l.output, l.batch*l.n*l.out_w*l.out_h, l.activation);
-	
-	if(q) {
-		quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
-	}
+    
+    if(q) {
+        quantize_cpu(l.output, l.outputs*l.batch, q->out_bw, q->out_fl, q->mode, q->a_type);
+    }
 }
 
 void backward_deconvolutional_layer(layer l, network net)
@@ -368,8 +368,8 @@ void update_deconvolutional_layer(layer l, update_args a)
     }
 
     axpy_cpu(size, -decay*batch, l.weights, 1, l.weight_updates, 1);
-	if (l.weight_prune_mask)
-		mul_cpu(size, l.weight_prune_mask, 1, l.weight_updates, 1);
+    if (l.weight_prune_mask)
+        mul_cpu(size, l.weight_prune_mask, 1, l.weight_updates, 1);
     axpy_cpu(size, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
     scal_cpu(size, momentum, l.weight_updates, 1);
 }

@@ -42,6 +42,12 @@ void forward_dropout_layer(dropout_layer l, network net)
     for(i = 0; i < l.batch * l.inputs; ++i){
         float r = rand_uniform(0, 1);
         l.rand[i] = r;
+#ifdef Dtype
+        if(net.true_q){
+            if(r < l.probability) net.input_q[i] = 0;
+            continue;
+        }
+#endif
         if(r < l.probability) net.input[i] = 0;
         else net.input[i] *= l.scale;
     }

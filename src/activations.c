@@ -149,17 +149,32 @@ void gradient_array(const float *x, const int n, const ACTIVATION a, float *delt
 } 
 
 #ifdef Dtype
+void gradient_array_Dtype(const Dtype *x, const int n, const ACTIVATION a, float *delta)
+{
+    for(int i=0; i<n; ++i){
+        switch(a){
+            case LINEAR:
+                break;
+            case RELU:
+                delta[i] *= (x[i] > 0) ? 1. : 0.;
+                break;
+            default:
+                error("Error: quantized datapath only supports LINEAR, RELU for now.");
+        }
+    }
+}
+
 Dtype activate_Dtype(Dtype x, ACTIVATION a)
 {
     switch(a){
-    	case LINEAR:
+        case LINEAR:
             return linear_activate_Dtype(x);
         case RELU:
             return relu_activate_Dtype(x);
         //case LEAKY:
         //    return leaky_activate_Dtype(x);
-		default:
-			error("Error: quantized datapath only supports LINEAR, RELU for now.");
+        default:
+            error("Error: quantized datapath only supports LINEAR, RELU for now.");
     }
     return 0;
 }

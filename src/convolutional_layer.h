@@ -26,7 +26,7 @@ void cudnn_convolutional_setup(layer *l);
 #endif
 
 #ifdef Dtype
-void add_bias_Dtype(Dtype *output, Dtype *biases, int batch, int n, int size);
+void add_bias_Dtype2(Dtype2 *output, Dtype *biases, int batch, int n, int size);
 #endif
 
 convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam);

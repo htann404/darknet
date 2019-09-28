@@ -1045,7 +1045,7 @@ __global__ void quantize_FP_kernel(float *data, int cnt, int bit_width, int fl, 
         float max_data = (powf(2, bit_width - 1) - 1) * powf(2, -fl);
         float min_data = -powf(2, bit_width - 1) * powf(2, -fl);
         // Saturate data
-        data[index] = fmax(fmin(data[index], max_data), min_data);
+        data[index] = fmaxf(fminf(data[index], max_data), min_data);
         // Round data
         data[index] /= powf(2, -fl);
         switch (rounding) {
@@ -1078,6 +1078,28 @@ extern "C" void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode
 }
 
 #ifdef Dtype
+__global__ void align_Dtype2_Radix_kernel(int N, Dtype2 *x, int shamt)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if (i<N){
+        Dtype2 val = x[i];
+        if (shamt >= 0){
+            x[i] = (val >> shamt);
+        }else{
+            x[i] = (val*(1<<-shamt));
+        }
+    }
+}
+
+__global__ void copy_float_to_Dtype2_kernel(int N, Dtype2 *D, float *S, float max_bw, float min_bw, float scale)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N){
+        float x = rint(S[i]*scale);
+        D[i] = (Dtype2)(fmaxf(min_bw, fminf(max_bw, x)));
+    }
+}
+
 __global__ void fill_kernel_Dtype(int N, Dtype ALPHA, Dtype *X, int INCX)
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
@@ -1088,6 +1110,52 @@ __global__ void copy_kernel_Dtype(int N,  Dtype *X, int OFFX, int INCX, Dtype *Y
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if(i < N) Y[i*INCY + OFFY] = X[i*INCX + OFFX];
+}
+
+__global__ void make_true_quantized_kernel(int N, Dtype *D, float *S, float max_bw,
+                                           float min_bw, float max_mag)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N){
+        float x = S[i];
+        x = rint(x*(max_bw+1)/max_mag);
+        D[i] = (Dtype)(fmaxf(min_bw, fminf(max_bw, x)));
+    }
+}
+
+__global__ void copy_Dtype_to_float_kernel(int N, float *D, Dtype *S, float div){
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) D[i] = (float)S[i]/div;
+}
+
+__global__ void copy_Dtype2_to_float_kernel(int N, float *D, Dtype2 *S, float div){
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < N) D[i] = (float)S[i]/div;
+}
+
+__global__ void add_bias_Dtype2_kernel(Dtype2 *output, Dtype *biases, int batch, int n, int size)
+{
+    int index = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if (index >= n*size*batch) return;
+    int i = index % size;
+    index /= size;
+    int j = index % n;
+    index /= n;
+    int k = index;
+
+    output[(k*n+j)*size + i] += (Dtype2)biases[j];
+}
+
+__global__ void shrink_Dtype2_to_Dtype_kernel(int N, Dtype *D, Dtype2 *S, int shamt)
+{
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i<N){
+        Dtype2 val = S[i];
+        if (shamt != 0){
+            val = (shamt > 0)? (val >> shamt) : (val*(1<<-shamt));
+        }
+        D[i] = (Dtype)(max(Dtype_MIN, min(Dtype_MAX, val)));
+    }
 }
 
 extern "C" void fill_gpu_Dtype(int N, Dtype ALPHA, Dtype * X, int INCX)
@@ -1107,4 +1175,57 @@ extern "C" void copy_gpu_Dtype(int N, Dtype * X, int INCX, Dtype * Y, int INCY)
     copy_gpu_offset_Dtype(N, X, 0, INCX, Y, 0, INCY);
 }
 
+
+extern "C" void make_true_quantized_gpu(Dtype *D, float *S, int N, int bw, int fl,
+                                        ROUNDING_MODE mode, QUANTIZATION_TYPE type)
+{
+    float max_val_bw = pow(2, bw - 1) - 1;
+    float min_val_bw = -max_val_bw - 1;
+    float max_mag = pow(2, bw - 1) * pow(2, -fl);
+    make_true_quantized_kernel<<<cuda_gridsize(N), BLOCK>>>(N, D, S, max_val_bw, min_val_bw, max_mag);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void copy_Dtype_to_float_gpu(float *D, void *S, int N, int FL, size_t SIZE)
+{
+    assert(S);
+    float div = pow(2, FL);
+ 
+    if(SIZE==sizeof(Dtype)){
+        copy_Dtype_to_float_kernel<<<cuda_gridsize(N), BLOCK>>>(N, D, (Dtype *)S, div);
+    }else{
+        copy_Dtype2_to_float_kernel<<<cuda_gridsize(N), BLOCK>>>(N, D, (Dtype2 *)S, div);
+    }
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void copy_float_to_Dtype2_gpu(Dtype2 *D, float *S, int N, int FL){
+
+    int bw = sizeof(Dtype2)*8;
+    float max_val = pow(2, bw - 1) - 1;
+    float min_val = -max_val - 1;
+    float scale = pow(2, FL);
+
+    copy_float_to_Dtype2_kernel<<<cuda_gridsize(N), BLOCK>>>(N, D, S, max_val, min_val, scale);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void align_Dtype2_radix_gpu(Dtype2 *X, int N, int shamt){
+	align_Dtype2_Radix_kernel<<<cuda_gridsize(N), BLOCK>>>(N, X, shamt);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void add_bias_Dtype2_gpu(Dtype2 *output, Dtype *biases, int batch, int n, int size)
+{
+    int num = n*size*batch;
+    add_bias_Dtype2_kernel<<<cuda_gridsize(num), BLOCK>>>(output, biases, batch, n, size);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void shrink_Dtype2_to_Dtype_gpu(Dtype2 *x, int n, int shamt)
+{
+    Dtype *ptr = (Dtype *)x;
+    shrink_Dtype2_to_Dtype_kernel<<<cuda_gridsize(n), BLOCK>>>(n, ptr, x, shamt);
+    check_error(cudaPeekAtLastError());
+}
 #endif

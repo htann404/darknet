@@ -113,6 +113,9 @@ matrix load_image_augment_paths(char **paths, int n, int min, int max, int size,
     for(i = 0; i < n; ++i){
         image im = load_image_color(paths[i], 0, 0);
         image crop;
+#ifdef QDEBUG
+        crop = center_crop_image(im, size, size);
+#else
         if(center){
             crop = center_crop_image(im, size, size);
         } else {
@@ -121,13 +124,14 @@ matrix load_image_augment_paths(char **paths, int n, int min, int max, int size,
         int flip = rand()%2;
         if (flip) flip_image(crop);
         random_distort_image(crop, hue, saturation, exposure);
-
+#endif
         /*
         show_image(im, "orig");
         show_image(crop, "crop");
         cvWaitKey(0);
         */
         //grayscale_image_3c(crop);
+
         free_image(im);
         X.vals[i] = crop.data;
         X.cols = crop.h*crop.w*crop.c;
@@ -1339,14 +1343,18 @@ data resize_data(data orig, int w, int h)
 
 data load_data_augment(char **paths, int n, int m, char **labels, int k, tree *hierarchy, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure, int center)
 {
+#ifndef QDEBUG
     if(m) paths = get_random_paths(paths, n, m);
+#endif
     data d = {0};
     d.shallow = 0;
     d.w=size;
     d.h=size;
     d.X = load_image_augment_paths(paths, n, min, max, size, angle, aspect, hue, saturation, exposure, center);
     d.y = load_labels_paths(paths, n, labels, k, hierarchy);
+#ifndef QDEBUG
     if(m) free(paths);
+#endif
     return d;
 }
 

@@ -522,14 +522,40 @@ void shrink_Dtype2_to_Dtype_cpu(Dtype2 *x, int n, int shamt){
     }
 }
 // TODO: assume Dtype is signed char for now!
-void make_quantized_weights_cpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type){
+void make_true_quantized_cpu(Dtype *w_q, float *w, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type){
+    float max_val_bw = pow(2, bw - 1) - 1;
+    float min_val_bw = -max_val_bw - 1;
     float max_mag = pow(2, bw - 1) * pow(2, -fl);
-
-    float val;
     for (int i=0; i<n; ++i){
-        val = round(fabs(w[i])*128/max_mag);
-        w_q[i] = (Dtype)(min(127,(int)(val)));
-        w_q[i] = w[i] > 0 ? w_q[i] : -w_q[i];
+        float x = w[i];
+        float val = round(x*(max_val_bw+1)/max_mag);
+        w_q[i] = (Dtype)(max(min_val_bw, min(max_val_bw, val)));
+        //w_q[i] = x > 0 ? w_q[i] : -w_q[i];
+    }
+}
+
+void copy_Dtype_to_float_cpu(float *d, void *s, int n, int fl, size_t SIZE){
+    float div = pow(2, fl);
+    if (SIZE==sizeof(Dtype)){
+        Dtype *ptr = (Dtype *)s;
+        for (int i=0; i<n; ++i)
+            d[i] = (float)ptr[i]/div;
+    }else{
+        Dtype2 *ptr = (Dtype2 *)s;
+        for (int i=0; i<n; ++i)
+            d[i] = (float)ptr[i]/div;
+    }
+}
+
+void align_Dtype2_radix_cpu(Dtype2 *x, int n, int shamt){
+    Dtype2 val;
+    for (int i=0; i<n; ++i){
+        val = x[i];
+        if (shamt >= 0){
+            x[i] = (val >> shamt);
+        }else{
+            x[i] = (val*(1<<-shamt));
+        }
     }
 }
 #endif

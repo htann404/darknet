@@ -21,6 +21,13 @@
 extern "C" {
 #endif
 
+#ifdef QUANTIZE
+#define Dtype signed char
+#define Dtype_MIN -128
+#define Dtype_MAX 127
+#define Dtype2 signed int
+#endif
+
 #define SECRET_NUM -1234
 extern int gpu_index;
 
@@ -139,6 +146,14 @@ typedef struct{
     float *bias_copy_gpu;
 #endif
 
+#ifdef Dtype
+    Dtype *weight_q;
+    Dtype *bias_q;
+#ifdef GPU
+	Dtype *weight_q_gpu;
+	Dtype *bias_q_gpu;
+#endif
+#endif
 } quantize_params;
 
 typedef enum{
@@ -153,9 +168,15 @@ typedef struct{
     int *jw;
     int *iw;
 #ifdef GPU
-    float *weights_gpu;
+    float *w_gpu;
     int *jw_gpu;
     int *iw_gpu;
+#endif
+#ifdef Dtype
+    Dtype *w_q;
+#ifdef GPU
+    Dtype *w_q_gpu;
+#endif
 #endif
 } compressed_weights;
 
@@ -296,6 +317,7 @@ struct layer{
 
     float * delta;
     float * output;
+
     float * loss;
     float * squared;
     float * norms;
@@ -387,6 +409,12 @@ struct layer{
 
     size_t workspace_size;
 
+#ifdef Dtype
+    Dtype * output_q;
+#ifdef GPU
+    Dtype *output_q_gpu;
+#endif
+#endif
 #ifdef GPU
     int *indexes_gpu;
 
@@ -544,6 +572,17 @@ typedef struct network{
     int index;
     float *cost;
     float clip;
+
+#ifdef Dtype
+    int true_q;
+    int in_bw;
+    int in_fl;
+    Dtype *input_q;
+    Dtype *workspace_q;
+#ifdef GPU
+    Dtype *input_q_gpu;
+#endif
+#endif
  
 #ifdef GPU
     float *input_gpu;
@@ -606,7 +645,6 @@ typedef struct matrix{
     float **vals;
 } matrix;
 
-
 typedef struct{
     int w, h;
     matrix X;
@@ -641,6 +679,9 @@ typedef struct load_args{
     int scale;
     int center;
     int coords;
+#ifdef Dtype
+    int true_q;
+#endif
     float jitter;
     float angle;
     float aspect;
@@ -678,6 +719,32 @@ typedef struct list{
     node *back;
 } list;
 
+#ifdef Dtype
+typedef struct {
+    int w;
+    int h;
+    int c;
+    Dtype *data;
+} image_Dtype;
+
+float *network_predict_Dtype(network *net, Dtype *input);
+image_Dtype load_image_color_Dtype(char *filename, int w, int h);
+image_Dtype load_image_signed_Dtype(char *filename, int w, int h, int c);
+image_Dtype center_crop_image_Dtype(image_Dtype im, int w, int h);
+//image_Dtype letterbox_image_Dtype(image_Dtype im, int w, int h);
+void test_shrink_Dtype2_to_Dtype_cpu();
+void copy_cpu_Dtype(int N, Dtype *X, int INCX, Dtype *Y, int INCY);
+void fill_cpu_Dtype(int N, Dtype ALPHA, Dtype * X, int INCX);
+void free_image_Dtype(image_Dtype m);
+#ifdef GPU
+void fill_gpu_Dtype(int N, Dtype ALPHA, Dtype * X, int INCX);
+void copy_gpu_Dtype(int N, Dtype * X, int INCX, Dtype * Y, int INCY);
+Dtype *cuda_make_array_Dtype(Dtype *x, size_t n);
+void cuda_push_array_Dtype(Dtype *x_gpu, Dtype *x, size_t n);
+void cuda_free_Dtype(Dtype *x_gpu);
+#endif
+#endif
+
 pthread_t load_data(load_args args);
 list *read_data_cfg(char *filename);
 list *read_cfg(char *filename);
@@ -690,6 +757,7 @@ data select_data(data *orig, int *inds);
 void init_prune_mask(network *net, int from_scratch);
 void read_quantized_net_cfg(network *net, char *filename);
 void allocate_quantized_weight_copy(network *net);
+void make_true_quantized_network(network *net);
 float train_network_quantized(network *net, data d);
 void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float *results);
 void validate_classifier_from_net(network net_in, int topk, load_args args, float *results);

@@ -349,6 +349,24 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
     check_error(status);
 }
 
+#ifdef Dtype
+void gemm_gpu_Dtype(int TA, int TB, int M, int N, int K, Dtype2 ALPHA,
+        Dtype *A_gpu, int lda,
+        Dtype *B_gpu, int ldb,
+        Dtype2 BETA,
+        Dtype2 *C_gpu, int ldc)
+{
+    cublasHandle_t handle = blas_handle();
+    // cublasGemmEx requires lda, ldb to be multiple of 4!!
+    // and A_gpu and B_gpu to be 32-bit aligned!!
+    cudaError_t status = cublasGemmEx(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N),
+            (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, CUDA_R_8I, ldb,
+            A_gpu, CUDA_R_8I, lda, &BETA, C_gpu, CUDA_R_32I, ldc,
+            CUDA_R_32I, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+    check_error(status);
+}
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

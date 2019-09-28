@@ -8,6 +8,10 @@
 #define INT_MIN -2147483648
 #endif
 
+#ifdef Dtype
+static int true_q;
+#endif
+
 void analyze_weights_and_activations(network *net, data d, profiler *prof)
 {
     assert(d.X.rows % net->batch == 0);
@@ -16,7 +20,7 @@ void analyze_weights_and_activations(network *net, data d, profiler *prof)
 
     int i,j,k,count;
     float *weight_copy, *bias_copy, *act_copy;
-    int num_weights, num_acts;
+    int num_weights, num_biases, num_acts;
     *net->seen += batch;
     for(i = 0; i < n; ++i){
         count = 0;
@@ -52,15 +56,15 @@ void analyze_weights_and_activations(network *net, data d, profiler *prof)
                 free(weight_copy);
 
                 // bias:
-                num_weights = (l.nbiases) ? l.nbiases : l.outputs;
-                bias_copy = malloc(num_weights*sizeof(float));
-                memcpy(bias_copy, l.biases, num_weights*sizeof(float));
-                k = num_weights - num_weights*0.99;
-                selection(bias_copy, num_weights, k, 1);
+                num_biases = (l.nbiases) ? l.nbiases : l.outputs;
+                bias_copy = malloc(num_biases*sizeof(float));
+                memcpy(bias_copy, l.biases, num_biases*sizeof(float));
+                k = num_biases - num_biases*0.99;
+                selection(bias_copy, num_biases, k, 1);
                 prof[count].max_bias = bias_copy[0];
                 prof[count].val99_bias = bias_copy[k];
                 fprintf(stderr, "num_bias: %d, k: %d, max: %f, max99: %f\n",
-                        num_weights, k, prof[count].max_bias, prof[count].val99_bias);
+                        num_biases, k, prof[count].max_bias, prof[count].val99_bias);
                 free(bias_copy);
             }
             if (l.output){
@@ -82,7 +86,8 @@ void analyze_weights_and_activations(network *net, data d, profiler *prof)
     }
     printf("Done with analysis.\n");
 }
-// TODO: take care of the case when Batch Norm is declared as a layer
+
+// TODO: support the case when Batch Norm is declared as a layer
 void fold_batch_norm_params(network *net){
     int i,j,k;
     for (i=0; i<net->n; ++i){
@@ -119,9 +124,10 @@ void fold_batch_norm_params(network *net){
     fprintf(stderr, "Done folding all batchnorm params.\n");
 }
 
-// TODO: replace with actually generating a new cfg with quantization params
+// TODO: replace with actual generation of a new cfg with quantization params
 // LIMITATION: data layer is assumed to have positive and negative vals
-void write_quantized_net_cfg(network *net, profiler *prof, char *filename) {
+void write_quantized_net_cfg(network *net, profiler *prof, char *filename)
+{
     FILE *fid = fopen(filename, "w");
     if(!fid) error("Unable to open file to write quantization cfg.");
     
@@ -133,18 +139,12 @@ void write_quantized_net_cfg(network *net, profiler *prof, char *filename) {
     for (i=0; i<net->n; ++i){
         if (!net->layers[i].weights)
             continue;
-/*
-        fprintf(fid, "%d %d %d %d %d %d %d\n",
-                    prof[count].layer_index,prof[count].type,
-                    prof[count].batch, prof[count].n,prof[count].c,
-                    prof[count].h, prof[count].w);
-*/
 
         in_bw = BITWIDTH;
         in_fl = (out_fl > INT_MIN) ? out_fl : BITWIDTH - 1;
         out_bw = BITWIDTH;
-        // we choose fraction length such that the 99 percentile
-        // largest value does not saturate:
+        // we choose fractional length such that the
+        // largest values does not saturate:
         out_fl = BITWIDTH - (int)(ceil(log2(prof[count].max_activation)));
         w_bw = BITWIDTH;
         w_fl = BITWIDTH - (int)(ceil(log2(prof[count].max_weight)));
@@ -156,7 +156,8 @@ void write_quantized_net_cfg(network *net, profiler *prof, char *filename) {
 }
 
 // TODO: replace with quantized params combined with net cfg parsing
-void read_quantized_net_cfg(network *net, char *filename){
+void read_quantized_net_cfg(network *net, char *filename)
+{
     FILE *fid = fopen(filename, "r");
     if(!fid) error("Unable to open file to read quantization cfg.");
     int size=1024;
@@ -184,7 +185,7 @@ void read_quantized_net_cfg(network *net, char *filename){
                     head = buffer+j+1; 
                 }
                 if(num >= num_params)
-                      break;
+                    break;
             }
             assert(i==params[0]);
         }
@@ -197,17 +198,25 @@ void read_quantized_net_cfg(network *net, char *filename){
         q->mode = params[7];
         q->a_type = params[8];
         q->w_type = params[9];
+#ifdef Dtype
+        if (!net->in_bw){
+            net->in_bw = q->in_bw;
+            net->in_fl = q->in_fl;
+        }
+#endif
     }
+    fclose(fid);
+
 #ifdef Dtype
     if (net->true_q){
         fprintf(stderr, "Using true quantized datapaths.\n");
         make_true_quantized_network(net);
     }
 #endif
-    fclose(fid);
 }
 
-void print_net_weights(network *net, const char *filename){
+void print_net_weights(network *net, const char *filename)
+{
     FILE *fid = fopen(filename, "w");
     if(!fid)
         error("cannot open file to print the weights");
@@ -236,86 +245,11 @@ void print_net_weights(network *net, const char *filename){
     fclose(fid);
 }
 
-// compute True Positive, False Positive, etc for segmentation
-void calc_TPFP_TNFN(network *net, int n, float *rate){
-    if (!net->truth){
-        fprintf(stderr, "Warning, no ground truth data for accuracy computation!\n");
-        return;
-    }
-    float *output = net->output;
-    float *truth = net->truth;
-    int size = net->h*net->w;
-    for (int i=0; i<net->batch; ++i){
-        int TP=0, FP=0, TN=0, FN=0;        
-        int offset = i*net->outputs + size;
-        for (int j=offset; j < offset + size; ++j){
-            if (output[j] > 0.5 && truth[j] > 0.5){
-                TP += 1;
-            }else if(output[j] > 0.5 && truth[j] < 0.5){
-                FP += 1;
-            }else if(output[j] < 0.5 && truth[j] > 0.5){
-                FN += 1;
-            }else{
-                TN += 1;
-            }
-        }
-        float precision = (float)TP/(TP+FP);
-        float recall = (float)TP/(TP+FN);
-        // compute Precision and Recall:
-        rate[0] += precision;
-        rate[1] += recall;
-        // F-1 measure
-        rate[2] += 2*(precision*recall)/(precision+recall);
-        // E-1 accuracy rate
-        rate[3] += (float)(FP+FN)/size;
-        rate[4] += (float)(FP+FN)/size/2; 
-    }
-}
-
-void run_and_calc_seg_accuracy(network *net, load_args *arguments, int N, float *results){        
-    data train;
-    data buffer;
-    pthread_t load_thread;
-    load_args args = *arguments;
-    args.d = &buffer;
-    load_thread = load_data(args);        
-    
-    long int seen = *net->seen;
-    *net->seen = 0;
-    
-    int epoch = 0;
-    while(epoch == 0){
-        pthread_join(load_thread, 0);
-        train = buffer;
-        load_thread = load_data(args);
-
-        assert(train.X.rows % net->batch == 0);
-        int batch = net->batch;
-         int n = train.X.rows / batch;
-        net->train = 1;
-        for(int i = 0; i < n; ++i){
-            get_next_batch(train, batch, i*batch, net->input, net->truth);
-            *net->seen += net->batch;
-            forward_network(net);
-            // compute F-measures, Recall, Precision, E1 and E2:
-            calc_TPFP_TNFN(net, net->batch*net->outputs, results);
-        }
-        free_data(train);    
-        epoch = *net->seen/N;
-    }
-    
-    assert(*net->seen > 0);
-    for (int j=0; j<5; ++j){
-        results[j] /= (float)(*net->seen);
-    }
-    *net->seen = seen;
-}
-
 load_args set_load_args(TASK_TYPE task, network *net, char **paths, list *options, int N)
 {
     int tag = option_find_int_quiet(options, "tag", 0);
     int classes = option_find_int(options, "classes", 2);
-    // TODO: implement grayscale loading in image.c
+    // TODO: grayscale loading in image.c
     int grayscale = option_find_int(options, "grayscale", 0); 
     int imgs = net->batch * net->subdivisions;
     char *label_list = option_find_str(options, "labels", "data/labels.list");
@@ -323,7 +257,11 @@ load_args set_load_args(TASK_TYPE task, network *net, char **paths, list *option
     load_args args = {0};
     args.w = net->w;
     args.h = net->h;
+#ifdef QDEBUG
+    args.threads = 1;
+#else
     args.threads = 32;
+#endif
     args.angle = net->angle;
     args.aspect = net->aspect;
     args.exposure = net->exposure;
@@ -359,15 +297,14 @@ load_args set_load_args(TASK_TYPE task, network *net, char **paths, list *option
             args.type = CLASSIFICATION_DATA;
         }
     }
+#ifdef Dtype
+    args.true_q = net->true_q;
+#endif
     return args;
 }
-#ifdef Dtype
-void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weightfile, 
-                        int gpu, char *quantized_cfg, char *filename, int q)
-#else
+
 void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weightfile, 
                         int gpu, char *quantized_cfg, char *filename)
-#endif
 {
     int i;
 #ifdef GPU
@@ -380,14 +317,14 @@ void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weigh
     }
 
     net->train = 0;    
-    fold_batch_norm_params(net);
+    //fold_batch_norm_params(net);
     // Initialize the quantization parameters:
     if (quantized_cfg) {
-        read_quantized_net_cfg(net, quantized_cfg);
         net->quantized = 1;
 #ifdef Dtype
-        net->true_q = 1;
+        net->true_q = true_q;
 #endif
+        read_quantized_net_cfg(net, quantized_cfg);
         fprintf(stderr, "Done reading quantization config file.\n");
     }else{
         fprintf(stderr, "Warning! Quantization config is not provided.\n");
@@ -419,6 +356,17 @@ void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weigh
         }
         printf("%s: Predicted in %f seconds.\n", filename, sec(clock()-time));
         printf("Predicted: %f\n", predictions[0]);
+        float maxval=0;
+        int indx;
+        for (int k=0; k<10; ++k){
+            if (predictions[k] > maxval){
+                maxval = predictions[k];
+                indx = k;
+            }
+            printf("%f ", predictions[k]);
+        }
+        printf("class %d\n", indx);
+
 #ifdef Dtype
         if(net->true_q){
             free_image_Dtype(imD);
@@ -430,10 +378,9 @@ void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weigh
             free_image(sized);
         }
     }else{
-        // RECALL, PRECISION, F1, E1, E2
         float acc[NUM_SEG_ACCURACY_ELEMENTS] = {0};
         list *options = read_data_cfg(datacfg);
-        char *train_list = option_find_str(options, "train", "data/train.list");
+        char *train_list = option_find_str(options, "valid", "data/train.list");
         list *plist = get_paths(train_list);
 
         char **paths = (char **)list_to_array(plist);
@@ -460,8 +407,6 @@ void test_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weigh
     free(net);
 }
 
-// this is mostly similar to segmenter_train
-// TODO: support more than conv, deconv, and fc
 void perform_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *weightfile,
                           int *gpus, int ngpus, int clear, char *quantized_cfg)
 {
@@ -482,6 +427,15 @@ void perform_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *we
     }
     srand(time(0));
     network *net = nets[0];
+    net->train = 1;
+
+    // Initialize the quantization parameters:
+    net->quantized = 1;
+#ifdef Dtype
+    net->true_q = true_q;
+#endif
+    read_quantized_net_cfg(net, quantized_cfg);
+    allocate_quantized_weight_copy(net);
 
     list *options = read_data_cfg(datacfg);
     char *backup_directory = option_find_str(options, "backup", "/backup/");
@@ -493,17 +447,13 @@ void perform_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *we
     int N = plist->size;
     load_args args = set_load_args(task, net, paths, options, N);
     
-    // Initialize the quantization parameters:
-    allocate_quantized_weight_copy(net);
-    read_quantized_net_cfg(net, quantized_cfg);
-    net->quantized = 1;
-
     data train;
     data buffer;
     pthread_t load_thread;
     args.d = &buffer;
     load_thread = load_data(args);
-    
+
+    // Do not train weights that have been pruned.
     init_prune_mask(net, 0);
 
     int epoch = (*net->seen)/N;
@@ -531,17 +481,16 @@ void perform_quantization(TASK_TYPE task, char *datacfg, char *cfgfile, char *we
             char buff[256];
             sprintf(buff, "%s/%s_%d.finetuned_weights",backup_directory,base, epoch);
             save_weights(net, buff);
-#ifdef Dtype
-            test_quantization(task, datacfg, cfgfile, weightfile, gpus[0], quantized_cfg, NULL, net->true_q);
-#else
-            test_quantization(task, datacfg, cfgfile, weightfile, gpus[0], quantized_cfg, NULL);
-#endif
+            printf("Testing model accuracy:\n");
+            test_quantization(task, datacfg, cfgfile, buff, gpus[0], quantized_cfg, NULL);
         }
     }
     
     char buff[256];
     sprintf(buff, "%s/%s.finetuned_weights", backup_directory, base);
     save_weights(net, buff);
+    printf("Testing model accuracy:\n");
+    test_quantization(task, datacfg, cfgfile, buff, gpus[0], quantized_cfg, NULL);
 
     for (i=0; i<net->n; ++i) {
         free_layer(net->layers[i]);
@@ -564,7 +513,7 @@ void analyze_model_ranges(TASK_TYPE task, char *datacfg, char *cfgfile, char *we
     char *base = basecfg(cfgfile);
     network *net = load_network(cfgfile, weightfile, 1);
     set_batch_network(net, 1);
-     net->max_batches = 100;
+    net->max_batches = 100;
     net->train = 0;   
     
     list *options = read_data_cfg(datacfg);
@@ -625,7 +574,7 @@ void analyze_model_ranges(TASK_TYPE task, char *datacfg, char *cfgfile, char *we
 void run_quantizer(int argc, char **argv)
 {
     if(argc < 4) {
-        fprintf(stderr, "usage: %s %s [analyze/finetune] [cfg] [weights]\n", argv[0], argv[1]);
+        fprintf(stderr, "usage: %s %s [analyze/finetune/test] [data] [cfg] [weights]\n", argv[0], argv[1]);
         return;
     }
 
@@ -655,7 +604,7 @@ void run_quantizer(int argc, char **argv)
     int clear = find_arg(argc, argv, "-clear");
     int nq = find_arg(argc, argv, "-no-quantize-cfg");
 #ifdef Dtype
-    int true_q = find_arg(argc, argv, "-true-quantize");
+    true_q = find_arg(argc, argv, "-true-quantize");
     if(nq) true_q = 0; 
 #endif
     // default to classification
@@ -665,7 +614,7 @@ void run_quantizer(int argc, char **argv)
         if (strcmp(ttype, "segmentation")==0){
             task = SEGMENTATION;
         }else{
-            // other kinds of task
+            // other task types
         }
     }
 
@@ -686,15 +635,11 @@ void run_quantizer(int argc, char **argv)
         if (gpu_index >= 0)
             error("Not supporting GPU execution for \"analyze\" at the moment");
         analyze_model_ranges(task, data, cfg, weights, gpus, ngpus);
-    } else if(0==strcmp(argv[2], "finetune")) {
+    } else if(0==strcmp(argv[2], "finetune")){
         if(!quantized_cfg) error("Must provide the quantization params file.");
         perform_quantization(task, data, cfg, weights, gpus, ngpus, clear, quantized_cfg);
-    } else if(0==strcmp(argv[2], "test")) {
-#ifdef Dtype
-        test_quantization(task, data, cfg, weights, gpus[0], quantized_cfg, filename, true_q);
-#else
+    } else if(0==strcmp(argv[2], "test")){
         test_quantization(task, data, cfg, weights, gpus[0], quantized_cfg, filename);
-#endif
     }
     return;
 }

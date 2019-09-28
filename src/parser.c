@@ -967,7 +967,22 @@ void save_convolutional_weights(layer l, FILE *fp)
         pull_convolutional_layer(l);
     }
 #endif
+
     int num = l.nweights;
+#ifdef Dtype
+    quantize_params *q = l.quantize;
+    if(q){
+        Dtype *biases = malloc(l.n*sizeof(Dtype));
+        Dtype *weights = malloc(num*sizeof(Dtype));
+        memcpy(biases, q->bias_q, l.n*sizeof(Dtype));
+        memcpy(weights, q->weight_q, num*sizeof(Dtype));
+
+        copy_Dtype_to_float_cpu(l.biases, biases, l.n, q->out_fl, sizeof(Dtype));
+        copy_Dtype_to_float_cpu(l.weights, weights, num, q->w_fl, sizeof(Dtype));
+        free(biases);
+        free(weights);
+    }
+#endif
     fwrite(l.biases, sizeof(float), l.n, fp);
     if (l.batch_normalize){
         fwrite(l.scales, sizeof(float), l.n, fp);
@@ -996,8 +1011,23 @@ void save_connected_weights(layer l, FILE *fp)
         pull_connected_layer(l);
     }
 #endif
+    int num = l.outputs*l.inputs;
+#ifdef Dtype
+    quantize_params *q = l.quantize;
+    if(q){
+        Dtype *biases = malloc(l.outputs*sizeof(Dtype));
+        Dtype *weights = malloc(num*sizeof(Dtype));
+        memcpy(biases, q->bias_q, l.outputs*sizeof(Dtype));
+        memcpy(weights, q->weight_q, num*sizeof(Dtype));
+
+        copy_Dtype_to_float_cpu(l.biases, biases, l.outputs, q->out_fl, sizeof(Dtype));
+        copy_Dtype_to_float_cpu(l.weights, weights, num, q->w_fl, sizeof(Dtype));
+        free(biases);
+        free(weights);
+    }
+#endif
     fwrite(l.biases, sizeof(float), l.outputs, fp);
-    fwrite(l.weights, sizeof(float), l.outputs*l.inputs, fp);
+    fwrite(l.weights, sizeof(float), num, fp);
     if (l.batch_normalize){
         fwrite(l.scales, sizeof(float), l.outputs, fp);
         fwrite(l.rolling_mean, sizeof(float), l.outputs, fp);
@@ -1027,6 +1057,7 @@ void save_weights_upto(network *net, char *filename, int cutoff)
     int i;
     for(i = 0; i < net->n && i < cutoff; ++i){
         layer l = net->layers[i];
+
         if (l.dontsave) continue;
         if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
             save_convolutional_weights(l, fp);

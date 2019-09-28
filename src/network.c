@@ -193,45 +193,77 @@ void forward_network(network *netp)
         return;
     }
 #endif
-//    signed short num = (signed char)(-128) + (signed char)(-128);
-//    fprintf(stderr,"%d 0x%X 0x%X 0x%X\n", num, num, (signed char)(-128), (signed char)(-128));
+
+/*
+#ifdef QDEBUG
+    FILE *fid = fopen("activations.out", "w");
+    int in_fl=0, out_fl=0;
+    int NUM = 200;
+#endif
+*/
+
     network net = *netp;
     int i;
     for(i = 0; i < net.n; ++i){
         net.index = i;
         layer l = net.layers[i];
-/*
-        if (i==0){
-        for(int j=0; j<100; ++j){
-            fprintf(stderr, "%.4f ", net.input[j]);
-        }
-        fprintf(stderr, "net0 TYPE %d\n", l.type);
-        }else{
-            
-        }
-*/
+
         if(l.delta){
             fill_cpu(l.outputs * l.batch, 0, l.delta, 1);
         }
         l.forward(l, net);
 /*
-         if (i==0){
-        for(int j=0; j<100; ++j){
-            fprintf(stderr, "%.4f ", net.input[j]);
+#ifdef QDEBUG
+        quantize_params *q = l.quantize;
+        if (q){
+            in_fl=q->in_fl;
+            out_fl=q->out_fl;
         }
-        fprintf(stderr, "net1\n");
-        }       
-*/        
-        net.input = l.output;
+        int fl = (q) ? in_fl : out_fl;
+        float div = pow(2, fl);
+        for(int j=0; j<NUM; ++j){
+            if(net.true_q){
+                float val = (float)net.input_q[j];
+                fprintf(fid, "%.4f ", val/div);
+            }else{
+                fprintf(fid, "%.4f ", net.input[j]);
+            }
+        }
+        fprintf(fid, "net0 #%d TYPE %d %d %f\n", i, l.type, fl, div);
+#endif
+*/
+
 #ifdef Dtype
         if(net.true_q){
             net.input_q = l.output_q;
-        }
+        }else
 #endif
+        {
+            net.input = l.output;
+        }
+/*
+#ifdef QDEBUG
+        fl = out_fl;
+        div = pow(2, fl);    
+        for(int j=0; j<NUM; ++j){
+            if(net.true_q){
+                float val = (float)net.input_q[j];
+                fprintf(fid, "%.4f ", val/div);
+            }else
+                fprintf(fid, "%.4f ", net.input[j]);
+        }
+        fprintf(fid, "net1, %f\n", div);
+#endif
+*/
         if(l.truth) {
             net.truth = l.output;
         }
     }
+/*
+#ifdef QDEBUG
+    fclose(fid);
+#endif
+*/
     calc_network_cost(netp);
 }
 
@@ -277,7 +309,10 @@ void calc_network_cost(network *netp)
             ++count;
         }
     }
-    *net.cost = sum/count;
+    if (count != 0)
+        *net.cost = sum/count;
+    else
+        *net.cost = 0;
 }
 
 int get_predicted_class_network(network *net)
@@ -304,7 +339,19 @@ void backward_network(network *netp)
         }else{
             layer prev = net.layers[i-1];
             net.input = prev.output;
+#ifdef Dtype
+            net.input_q = prev.output_q;
+#endif
             net.delta = prev.delta;
+/*
+#ifdef QDEBUG
+            printf("layer: %d, type: %d\n", i, l.type);
+            for(int jj=0; jj<100; ++jj){
+                printf("%.6f ", net.delta[jj]);
+            }
+            printf("\n");
+#endif
+*/
         }
         net.index = i;
         l.backward(l, net);
@@ -382,7 +429,7 @@ void test_shrink_Dtype2_to_Dtype_cpu(){
     }
     fprintf(stderr, "\n");
 
-    shrink_Dtype2_to_Dtype_cpu(w_q, n, shamt);
+    shrink_Dtype2_to_Dtype_cpu(w, n, shamt);
 
     for (int i=0; i<n; ++i){
         fprintf(stderr, "%d\t", (int)w_q[i]);
@@ -402,7 +449,7 @@ void make_true_quantized_network(network *net){
     for (int i=0; i<n; ++i){
         w[i] = rand_uniform(-16,15);
     }
-    make_quantized_weights_cpu(w, w_q, n, bw, fl, ROUND_NEAREST, DFP);
+    make_true_quantized_cpu(w_q, w, n, bw, fl, ROUND_NEAREST, DFP);
     for (int i=0; i<n; ++i){
         fprintf(stderr, "num: %f %d\n", w[i], (int)w_q[i]);
     }
@@ -424,17 +471,22 @@ void make_true_quantized_network(network *net){
         int num_weights = (l->nweights > 0) ? l->nweights : l->inputs*l->outputs;
         int num_biases = (l->nbiases > 0) ? l->nbiases : l->outputs;
 
-        q->weight_q = calloc(num_weights, sizeof(Dtype));
-        make_quantized_weights_cpu(l->weights, q->weight_q, num_weights,
+        //q->weight_q = calloc(num_weights, sizeof(Dtype));
+        //q->bias_q = calloc(num_biases, sizeof(Dtype));
+        q->weight_q = (Dtype *)l->weights;
+        q->bias_q = (Dtype *)l->biases;
+        // quantize to Dtype in place
+        make_true_quantized_cpu(q->weight_q, l->weights, num_weights,
                                     q->w_bw, q->w_fl, q->mode, q->w_type);
-        q->bias_q = calloc(num_biases, sizeof(Dtype));
-        make_quantized_weights_cpu(l->biases, q->bias_q, num_biases,
+        make_true_quantized_cpu(q->bias_q, l->biases, num_biases,
                                     q->out_bw, q->out_fl, q->mode, q->a_type);
 
 #ifdef GPU
         if (gpu_index >=0){
-            q->weight_q_gpu = cuda_make_array_Dtype(q->weight_q, num_weights);
-            q->bias_q_gpu = cuda_make_array_Dtype(q->bias_q, num_biases);
+            q->weight_q_gpu = (Dtype *)l->weights_gpu;
+            q->bias_q_gpu = (Dtype *)l->biases_gpu;
+            cuda_push_array_Dtype(q->weight_q_gpu, q->weight_q, num_weights);
+            cuda_push_array_Dtype(q->bias_q_gpu, q->bias_q, num_biases);
         }
 #endif
     }
@@ -449,25 +501,53 @@ void allocate_quantized_weight_copy(network *net){
         int num_weights, num_biases;
         // true for conv, deconv and fc layers.
         num_weights = (l->nweights > 0) ? l->nweights : l->inputs*l->outputs;
-        num_biases = (l->nweights > 0) ? l->n : l->outputs;
+        num_biases = (l->nbiases > 0) ? l->nbiases : l->outputs;
         assert(num_weights > 0);
+        assert(num_biases > 0);
 
         if (!l->quantize)
             l->quantize = calloc(1,sizeof(quantize_params));
-        l->quantize->weight_copy = calloc(num_weights, sizeof(float));
-        l->quantize->bias_copy = calloc(num_biases, sizeof(float));
-        assert(l->quantize->weight_copy);
-        assert(l->quantize->bias_copy);
+        quantize_params *q = l->quantize;
+        q->weight_copy = calloc(num_weights, sizeof(float));
+        assert(q->weight_copy);
+        q->bias_copy = calloc(num_biases, sizeof(float));
+        assert(q->bias_copy);
+
+        // copy over the original weights:
+#ifdef Dtype
+        if (net->true_q){
+            copy_Dtype_to_float_cpu(q->weight_copy, q->weight_q, num_weights, q->w_fl, sizeof(Dtype));
+            copy_Dtype_to_float_cpu(q->bias_copy, q->bias_q, num_biases, q->out_fl, sizeof(Dtype)); 
+        }else
+#endif
+        {
+            memcpy(q->weight_copy, l->weights, num_weights*sizeof(float));
+            memcpy(q->bias_copy, l->biases, num_biases*sizeof(float));
+        }
 
 #ifdef GPU
         if (gpu_index >= 0){
-            l->quantize->weight_copy_gpu = cuda_make_array(l->weights, num_weights);
-            l->quantize->bias_copy_gpu = cuda_make_array(l->biases, num_biases);
+#ifdef Dtype
+            if (net->true_q){
+                q->weight_copy_gpu = cuda_make_array(0, num_weights);
+                q->bias_copy_gpu = cuda_make_array(0, num_biases);
+                copy_Dtype_to_float_gpu(q->weight_copy_gpu,
+                                        q->weight_q_gpu,
+                                        num_weights,
+                                        q->w_fl, sizeof(Dtype));
+                copy_Dtype_to_float_gpu(q->bias_copy_gpu,
+                                        q->bias_q_gpu,
+                                        num_biases,
+                                        q->out_fl, sizeof(Dtype));
+            }else
+#endif
+            {
+                q->weight_copy_gpu = cuda_make_array(l->weights, num_weights);
+                q->bias_copy_gpu = cuda_make_array(l->biases, num_biases);
+            }
         }
 #endif
-        // copy over the original weights:
-        memcpy(l->quantize->weight_copy, l->weights, num_weights*sizeof(float));
-        memcpy(l->quantize->bias_copy, l->biases, num_biases*sizeof(float));
+
     }
 }
 
@@ -483,21 +563,43 @@ void copy_and_quantize_weights(network* net){
 
 #ifdef GPU
         if (gpu_index >= 0){
-            cudaError_t status;
-            status = cudaMemcpy(l->weights_gpu, q->weight_copy_gpu, num_weights*sizeof(float), cudaMemcpyDeviceToDevice);
-            check_error(status);
-            status = cudaMemcpy(l->biases_gpu, q->bias_copy_gpu, num_biases*sizeof(float), cudaMemcpyDeviceToDevice);
-            check_error(status);
-
-            quantize_gpu(l->weights_gpu, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
-            quantize_gpu(l->biases_gpu, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+#ifdef Dtype
+            if (net->true_q){
+                make_true_quantized_gpu(q->weight_q_gpu, q->weight_copy_gpu, num_weights,
+                                        q->w_bw, q->w_fl, q->mode, q->w_type);
+                make_true_quantized_gpu(q->bias_q_gpu, q->bias_copy_gpu, num_biases,
+                                        q->out_bw, q->out_fl, q->mode, q->a_type);
+            }else
+#endif
+            {
+                cudaError_t status;
+                status = cudaMemcpy(l->weights_gpu, q->weight_copy_gpu,
+                                num_weights*sizeof(float), cudaMemcpyDeviceToDevice);
+                check_error(status);
+                status = cudaMemcpy(l->biases_gpu, q->bias_copy_gpu,
+                                num_biases*sizeof(float), cudaMemcpyDeviceToDevice);
+                check_error(status);
+                quantize_gpu(l->weights_gpu, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
+                quantize_gpu(l->biases_gpu, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+            }
             continue;
         }
 #endif
-        memcpy(l->weights, q->weight_copy, num_weights*sizeof(float));
-        memcpy(l->biases, q->bias_copy, num_biases*sizeof(float));
-        quantize_cpu(l->weights, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
-        quantize_cpu(l->biases, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+
+#ifdef Dtype
+        if(net->true_q){
+            make_true_quantized_cpu(q->weight_q, q->weight_copy, num_weights,
+                                    q->w_bw, q->w_fl, q->mode, q->w_type);
+            make_true_quantized_cpu(q->bias_q, q->bias_copy, num_biases,
+                                    q->out_bw, q->out_fl, q->mode, q->a_type);
+        }else
+#endif
+        {
+            memcpy(l->weights, q->weight_copy, num_weights*sizeof(float));
+            memcpy(l->biases, q->bias_copy, num_biases*sizeof(float));
+            quantize_cpu(l->weights, num_weights, q->w_bw, q->w_fl, q->mode, q->w_type);
+            quantize_cpu(l->biases, num_biases, q->out_bw, q->out_fl, q->mode, q->a_type);
+        }
     }
 }
 
@@ -535,22 +637,36 @@ void swap_quantized_weight_pointers(network *net){
 float train_network_quantized(network *net, data d){
     assert(d.X.rows % net->batch == 0);
     int batch = net->batch;
-     int n = d.X.rows / batch;
+    int n = d.X.rows / batch;
 
     float sum = 0;
     net->train = 1;
     for(int i = 0; i < n; ++i){
         get_next_batch(d, batch, i*batch, net->input, net->truth);
         *net->seen += net->batch;
+
+#ifdef Dtype
+        if(net->true_q){
+            net->input_q = (Dtype *)net->input;
+#ifdef GPU
+            net->input_q_gpu = (Dtype *)net->input_gpu;
+#endif
+            make_true_quantized_cpu(net->input_q, net->input, batch*d.X.cols,
+                                    net->in_bw, net->in_fl, ROUND_NEAREST, DFP);
+        }
+#endif
         // synchronize and quantize weights:
         copy_and_quantize_weights(net);
         forward_network(net);
 
-        //swap_quantized_weight_pointers(net);
+        swap_quantized_weight_pointers(net);
         backward_network(net);
         sum += *net->cost;
-        swap_quantized_weight_pointers(net);
-        if(((*net->seen)/net->batch)%net->subdivisions == 0) update_network(net);
+        if(((*net->seen)/net->batch)%net->subdivisions == 0){
+            //swap_quantized_weight_pointers(net);
+            update_network(net);
+            //swap_quantized_weight_pointers(net);
+        }
         // swap back:
         swap_quantized_weight_pointers(net);
     }
@@ -993,11 +1109,26 @@ void forward_network_gpu(network *netp)
 {
     network net = *netp;
     cuda_set_device(net.gpu_index);
-    cuda_push_array(net.input_gpu, net.input, net.inputs*net.batch);
+#ifdef Dtype
+    if (net.true_q){
+        if(!net.input_q_gpu) net.input_q_gpu = (Dtype *)net.input_gpu;
+        cuda_push_array_Dtype(net.input_q_gpu, net.input_q, net.inputs*net.batch);
+    }else
+#endif
+    {
+        cuda_push_array(net.input_gpu, net.input, net.inputs*net.batch);
+    }
+
     if(net.truth){
         cuda_push_array(net.truth_gpu, net.truth, net.truths*net.batch);
     }
-
+/*
+#ifdef QDEBUG
+    FILE *fid = fopen("activations_gpu.out", "w");
+    int in_fl=0, out_fl=0;
+    int NUM = 200;
+#endif
+*/
     int i;
     for(i = 0; i < net.n; ++i){
         net.index = i;
@@ -1006,6 +1137,27 @@ void forward_network_gpu(network *netp)
             fill_gpu(l.outputs * l.batch, 0, l.delta_gpu, 1);
         }
         l.forward_gpu(l, net);
+/*
+#ifdef QDEBUG
+        quantize_params *q = l.quantize;
+        if (q){
+            in_fl=q->in_fl;
+            out_fl=q->out_fl;
+        }
+        int fl = (q) ? in_fl : out_fl;
+        float div = pow(2, fl);
+        cuda_pull_array((float*)net.input_q_gpu, (float*)net.input_q, l.inputs > 0 ? l.inputs : NUM);
+        for(int j=0; j<NUM; ++j){
+            if(net.true_q){
+                float val = (float)net.input_q[j];
+                fprintf(fid, "%.4f ", val/div);
+            }else{
+                fprintf(fid, "%.4f ", net.input[j]);
+            }
+        }
+        fprintf(fid, "net0 #%d TYPE %d %d %f\n", i, l.type, fl, div);
+#endif
+*/
         net.input_gpu = l.output_gpu;
         net.input = l.output;
 #ifdef Dtype
@@ -1014,11 +1166,17 @@ void forward_network_gpu(network *netp)
             net.input_q = l.output_q;
         }
 #endif
+
         if(l.truth) {
             net.truth_gpu = l.output_gpu;
             net.truth = l.output;
         }
     }
+/*
+#ifdef QDEBUG
+    fclose(fid);
+#endif
+*/
     pull_network_output(netp);
     calc_network_cost(netp);
 }
@@ -1036,6 +1194,10 @@ void backward_network_gpu(network *netp)
             net = orig;
         }else{
             layer prev = net.layers[i-1];
+#ifdef Dtype
+            net.input_q = prev.output_q;
+            net.input_q_gpu = prev.output_q_gpu;
+#endif
             net.input = prev.output;
             net.delta = prev.delta;
             net.input_gpu = prev.output_gpu;

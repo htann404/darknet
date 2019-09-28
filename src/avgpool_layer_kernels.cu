@@ -7,7 +7,20 @@ extern "C" {
 #include "cuda.h"
 }
 
-__global__ void forward_avgpool_layer_kernel(int n, int w, int h, int c, float *input, float *output)
+#ifdef Dtype
+__device__ void forward_avgpool_layer_Dtype_device(int out_index, int k, int b, int w, int h, int c, Dtype *input, Dtype *output){
+    int i;
+    Dtype2 accum = 0;
+    for(i = 0; i < w*h; ++i){
+        int in_index = i + h*w*(k + b*c);
+        accum += input[in_index];
+    }
+    accum /= w*h;
+    output[out_index] = (Dtype)accum;
+}
+#endif
+
+__global__ void forward_avgpool_layer_kernel(int n, int w, int h, int c, void *in, void *out, int true_q)
 {
     int id = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if(id >= n) return;
@@ -16,8 +29,16 @@ __global__ void forward_avgpool_layer_kernel(int n, int w, int h, int c, float *
     id /= c;
     int b = id;
 
-    int i;
     int out_index = (k + c*b);
+#ifdef Dtype
+    if(true_q){
+        forward_avgpool_layer_Dtype_device(out_index, k, b, w, h, c, (Dtype *)in, (Dtype *)out);
+        return;
+    }
+#endif
+    int i;
+    float *input = (float *)in;
+    float *output = (float *)out;
     output[out_index] = 0;
     for(i = 0; i < w*h; ++i){
         int in_index = i + h*w*(k + b*c);
@@ -47,7 +68,14 @@ extern "C" void forward_avgpool_layer_gpu(avgpool_layer layer, network net)
 {
     size_t n = layer.c*layer.batch;
 
-    forward_avgpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.w, layer.h, layer.c, net.input_gpu, layer.output_gpu);
+#ifdef Dtype
+    if(net.true_q){
+        forward_avgpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.w, layer.h, layer.c, (void *)net.input_q_gpu, (void *)layer.output_gpu, 1);
+    }else
+#endif
+    {
+        forward_avgpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.w, layer.h, layer.c, (void *)net.input_gpu, (void *)layer.output_gpu, 0);
+    }
     check_error(cudaPeekAtLastError());
 }
 

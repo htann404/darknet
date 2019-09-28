@@ -25,14 +25,14 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *C, int ldc);
 
 #ifdef Dtype
-void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
-        Dtype *A, int *jA, int *iA, int lda, 
+void sp_gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA,
+        Dtype *A, int *jA, int *iA, int lda,
         Dtype *B, int ldb,
         Dtype BETA,
         Dtype2 *C, int ldc);
 
-void gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA, 
-        Dtype *A, int lda, 
+void gemm_cpu_Dtype(int TA, int TB, int M, int N, int K, Dtype ALPHA,
+        Dtype *A, int lda,
         Dtype *B, int ldb,
         Dtype BETA,
         Dtype2 *C, int ldc);
@@ -44,11 +44,12 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *B_gpu, int ldb,
         float BETA,
         float *C_gpu, int ldc);
-
-void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA, 
-        float *A, int lda, 
-        float *B, int ldb,
-        float BETA,
-        float *C, int ldc);
+#ifdef Dtype
+void gemm_gpu_Dtype(int TA, int TB, int M, int N, int K, Dtype2 ALPHA, 
+        Dtype *A, int lda, 
+        Dtype *B, int ldb,
+        Dtype2 BETA,
+        Dtype2 *C, int ldc);
+#endif
 #endif
 #endif

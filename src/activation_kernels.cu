@@ -206,11 +206,13 @@ extern "C" void gradient_array_gpu(float *x, int n, ACTIVATION a, float *delta)
 }
 
 #ifdef Dtype
-__device__ float relu_activate_kernel_Dtype(Dtype x){return (Dtype)(x*(x>0));}
+__device__ float relu_activate_kernel_Dtype(Dtype x){return (x > 0) ? x : (Dtype)0;}
 
 __device__ float activate_kernel_Dtype(Dtype x, ACTIVATION a)
 {
     switch(a){
+        case LINEAR:
+            return x;
         case RELU:
             return relu_activate_kernel_Dtype(x);
         default:
@@ -218,17 +220,30 @@ __device__ float activate_kernel_Dtype(Dtype x, ACTIVATION a)
     }
     return 0;
 }
-__global__ void activate_array_kernel_Dtype(Dtype *x, int n, ACTIVATION a)
+__global__ void activate_array_Dtype_kernel(Dtype *x, int n, ACTIVATION a)
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if(i < n) x[i] = activate_kernel_Dtype(x[i], a);
 }
 
-extern "C" void activate_array_gpu_Dtype(Dtype *x, int n, ACTIVATION a) 
+__global__ void gradient_array_Dtype_kernel(Dtype *x, int n, ACTIVATION a, float *delta)
 {
-    if (a != RELU)
-        error("Error: quantized datapath only supports ReLU for now.");
-    activate_array_kernel_Dtype<<<cuda_gridsize(n), BLOCK>>>(x, n, a);
+    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    if(i < n) delta[i] *= gradient_kernel((float)x[i], a);
+}
+
+
+extern "C" void activate_array_Dtype_gpu(Dtype *x, int n, ACTIVATION a) 
+{
+    if (a != RELU && a != LINEAR)
+        error("Error: quantized datapath only supports LINEAR & ReLU for now.");
+    activate_array_Dtype_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, a);
+    check_error(cudaPeekAtLastError());
+}
+
+extern "C" void gradient_array_Dtype_gpu(Dtype *x, int n, ACTIVATION a, float *delta) 
+{
+    gradient_array_Dtype_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, a, delta);
     check_error(cudaPeekAtLastError());
 }
 #endif

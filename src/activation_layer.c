@@ -61,7 +61,7 @@ void forward_activation_layer_gpu(layer l, network net)
 #ifdef Dtype
     if (net.true_q){
         copy_gpu_Dtype(l.outputs*l.batch, net.input_q_gpu, 1, l.output_q_gpu, 1);
-        activate_array_gpu_Dtype(l.output_q_gpu, l.outputs*l.batch, l.activation);
+        activate_array_Dtype_gpu(l.output_q_gpu, l.outputs*l.batch, l.activation);
         return;
     }
 #endif

@@ -132,8 +132,61 @@ void resize_batchnorm_layer(layer *layer, int w, int h)
     fprintf(stderr, "Not implemented\n");
 }
 
+#ifdef Dtype
+void forward_quantized_batchnorm_layer(layer *l, network *net)
+{
+    if(l->type == BATCHNORM){
+        // TODO: need to find previous quantized params to support this
+        error("Separate BATCHNORM layer is not supported for quantized datapath.\n\
+               It must be part of other layer.");
+    }
+
+    quantize_params *q = l->quantize;
+    Dtype2 *output_q = (Dtype2 *)l->output_q;
+    float *output_f = (float *)malloc(l->outputs*l->batch*sizeof(float));
+    float div = pow(2, q->in_fl + q->w_fl);
+    for (int i=0; i < l->outputs*l->batch; ++i){
+        l->x[i] = (float)output_q[i]/div;
+        output_f[i] = l->x[i];
+    }
+    
+    mean_cpu(output_f, l->batch, l->out_c, l->out_h*l->out_w, l->mean);
+    variance_cpu(output_f, l->mean, l->batch, l->out_c, l->out_h*l->out_w, l->variance);
+
+    scal_cpu(l->out_c, .99, l->rolling_mean, 1);
+    axpy_cpu(l->out_c, .01, l->mean, 1, l->rolling_mean, 1);
+    scal_cpu(l->out_c, .99, l->rolling_variance, 1);
+    axpy_cpu(l->out_c, .01, l->variance, 1, l->rolling_variance, 1);
+
+    // Just normalize using float inputs
+    normalize_cpu(output_f, l->mean, l->variance, l->batch, l->out_c, l->out_h*l->out_w);   
+    for (int i=0; i < l->outputs*l->batch; ++i){
+        l->x_norm[i] = output_f[i];
+    }
+    scale_bias(output_f, l->scales, l->batch, l->out_c, l->out_h*l->out_w);
+
+    int bw = sizeof(Dtype2)*8;
+    float max_val = pow(2, bw - 1) - 1;
+    float min_val = -max_val - 1;
+    for (int i=0; i<l->outputs*l->batch; ++i){
+        float val = round(output_f[i]*div);
+        output_q[i] = (Dtype2)(max(min_val, min(max_val, val)));
+    }
+    free(output_f);
+}
+#endif
+
 void forward_batchnorm_layer(layer l, network net)
 {
+#ifdef Dtype
+    if(net.true_q){
+//        if(net.train==0)
+//            error("BATCHNORM: only supported during training for true quantized datapath.");
+        forward_quantized_batchnorm_layer(&l, &net);
+        return;
+    }
+#endif
+
     if(l.type == BATCHNORM) copy_cpu(l.outputs*l.batch, net.input, 1, l.output, 1);
     copy_cpu(l.outputs*l.batch, l.output, 1, l.x, 1);
     if(net.train){
@@ -186,8 +239,50 @@ void push_batchnorm_layer(layer l)
     cuda_push_array(l.rolling_variance_gpu, l.rolling_variance, l.c);
 }
 
+#ifdef Dtype
+void forward_quantized_batchnorm_layer_gpu(layer *l, network *net){
+    if(l->type == BATCHNORM){
+        // TODO: need to find previous quantized params to support this
+        error("Separate BATCHNORM layer is not supported for quantized datapath.\n\
+               It must be part of other layer.");
+    }
+    
+    quantize_params *q = l->quantize;
+    copy_Dtype_to_float_gpu(l->x_gpu, (void *)l->output_q_gpu, l->outputs*l->batch,
+                            q->in_fl + q->w_fl, sizeof(Dtype2));
+    float *output_f = cuda_make_array(l->x_gpu, l->outputs*l->batch);
+    
+    fast_mean_gpu(output_f, l->batch, l->out_c, l->out_h*l->out_w, l->mean_gpu);
+    fast_variance_gpu(output_f, l->mean_gpu, l->batch, l->out_c, l->out_h*l->out_w, l->variance_gpu);
+
+    scal_gpu(l->out_c, .99, l->rolling_mean_gpu, 1);
+    axpy_gpu(l->out_c, .01, l->mean_gpu, 1, l->rolling_mean_gpu, 1);
+    scal_gpu(l->out_c, .99, l->rolling_variance_gpu, 1);
+    axpy_gpu(l->out_c, .01, l->variance_gpu, 1, l->rolling_variance_gpu, 1);
+
+    //copy_gpu(l.outputs*l.batch, l.output_gpu, 1, l.x_gpu, 1);
+    normalize_gpu(output_f, l->mean_gpu, l->variance_gpu, l->batch, l->out_c, l->out_h*l->out_w);
+    copy_gpu(l->outputs*l->batch, output_f, 1, l->x_norm_gpu, 1);
+
+    scale_bias_gpu(output_f, l->scales_gpu, l->batch, l->out_c, l->out_h*l->out_w);
+    //add_bias_gpu(l.output_gpu, l.biases_gpu, l.batch, l.out_c, l.out_w*l.out_h);
+
+    copy_float_to_Dtype2_gpu((Dtype2 *)l->output_q_gpu, output_f,
+                             l->outputs*l->batch, q->in_fl + q->w_fl);
+    if(output_f) cuda_free(output_f);
+}
+#endif
+
 void forward_batchnorm_layer_gpu(layer l, network net)
 {
+#ifdef Dtype
+    if(net.true_q){
+//        if(net.train==0)
+//            error("BATCHNORM: only supported during training for true quantized datapath.");
+        forward_quantized_batchnorm_layer_gpu(&l, &net);
+        return;
+    }
+#endif
     if(l.type == BATCHNORM) copy_gpu(l.outputs*l.batch, net.input_gpu, 1, l.output_gpu, 1);
     copy_gpu(l.outputs*l.batch, l.output_gpu, 1, l.x_gpu, 1);
     if (net.train) {

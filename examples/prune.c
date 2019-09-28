@@ -18,6 +18,13 @@ void prune(network *net, PRUNE_TYPE type, float percent, int first_layer, int la
     float w;
     float *weights, *weights_gpu;
     
+    if (type==MAGNITUDE){
+        fprintf(stderr, "Performing magnitude-based pruning.\n");
+    }else if(type==PERCENTAGE){
+        fprintf(stderr, "Performing percentage-based pruning.\n");
+    }else{
+        fprintf(stderr, "Performing halfway pruning.\n");
+    }
     // don't prune the first layer:
     int first = 0;
     while(first < n){
@@ -28,7 +35,7 @@ void prune(network *net, PRUNE_TYPE type, float percent, int first_layer, int la
     }
     for (i=0; i<n; ++i){
         if (i==first && !first_layer) continue;    
-        fprintf(stderr, "Pruning layer %d\n", i);    
+        //fprintf(stderr, "Pruning layer %d\n", i);    
         layer *l = &(net->layers[i]);
         if(!l->weights)
             continue;
@@ -154,6 +161,7 @@ void init_prune_mask(network *net, int from_scratch){
 // TODO: Check the case when l->groups > 1
 void compress_weights(network *net)
 {
+    fprintf(stderr, "Compressing network weights\n");
     int i, j, k, rows, cols;
     int count, nnz, num_weights;
     for (i=0; i<net->n; ++i) {
@@ -169,6 +177,9 @@ void compress_weights(network *net)
         }else if(l->type == DECONVOLUTIONAL){
             rows = l->c;
             cols = l->size*l->size*l->n; 
+        }else if(l->type == CONNECTED){
+            rows = l->outputs;
+            cols = l->inputs;
         }else{
             continue;
         }
@@ -184,29 +195,30 @@ void compress_weights(network *net)
         if (!l->weights_c)
             l->weights_c = calloc(1, sizeof(compressed_weights));
         compressed_weights *w_c = l->weights_c;
-        
-        if (!w_c->w)
-            w_c->w = malloc(nnz*sizeof(float));
+        w_c->nnz = nnz;
+
+#ifdef Dtype
+        if (net->true_q){
+            if (!l->quantize || !l->quantize->weight_q)
+                error("Error in compress weights. true_q is set, but quantized weights not found!");
+            if (!w_c->w_q)
+                w_c->w_q = malloc(nnz*sizeof(Dtype));
+        }else
+#endif
+        {
+            if (!w_c->w)
+                w_c->w = malloc(nnz*sizeof(float));
+        }
+
         if (!w_c->jw)
             w_c->jw = malloc(nnz*sizeof(int));    
-        w_c->nnz = nnz;
-        if (l->type == CONVOLUTIONAL) {
+        
+        if (l->type == CONVOLUTIONAL || l->type == CONNECTED) {
             w_c->type = CSR;
             w_c->n = rows;
-#ifdef Dtype
-            if (!net->true_q) {
-                if (!w_c->w)
-                    w_c->w = malloc(nnz*sizeof(float));
-            } else {
-                if (!l->quantize || !l->quantize->weight_q)
-                    error("Error in compress weights. true_q is set, but quantized weights not found!");
-                if (!w_c->w_q)
-                    w_c->w_q = malloc(nnz*sizeof(Dtype));
-            }
-#else
             if (!w_c->iw)
                 w_c->iw = malloc((w_c->n+1)*sizeof(int));
-#endif
+
             count = 0;
             w_c->iw[0] = 0;
             for (j=0; j<rows; ++j){
@@ -311,8 +323,6 @@ void count_zeros(network *net){
                     ++count;
             }
         }
-            if (l->output[j]==0)
-                ++count;
         
         total_actsz += count;
         fprintf(stderr, "\t\tNum Activations: %d, Fraction Zeros: %.4f\n",
@@ -416,11 +426,12 @@ void prune_classifier(network *net, char *backup_directory, char *base, load_arg
     printf("%d\n", N);
     printf("%d %d\n", args.min, args.max);
 
-    float orig_acc[2] = {0.84272, 0.93614};
+    float orig_acc[2] = {0.8911, 0.9616};//{0.84272, 0.93614}->model with leaky activ;
     float cur_acc[2];
-//    validate_classifier_from_net(*net, 2, args, orig_acc);
+    //validate_classifier_from_net(*net, 2, args, orig_acc);
     init_prune_mask(net,1);
     prune(net, MAGNITUDE, 0, 1, 1);
+    count_zeros(net);
     prune(net, HALFWAY, 0, 0, 0);
     count_zeros(net);
     validate_classifier_from_net(*net, 2, args, cur_acc);
@@ -602,11 +613,7 @@ void count_using_model_cfg(int q, char *datacfg, char *cfgfile, char *weightfile
         set_batch_network(net, 1);
         fprintf(stderr, "Batch size set to 1.\n");
     }
-    fold_batch_norm_params(net);
-    
-    if (compress)
-        compress_weights(net);
-
+    //fold_batch_norm_params(net);
     // Initialize the quantization parameters:
     if (quantized_cfg){
 #ifdef Dtype
@@ -616,6 +623,9 @@ void count_using_model_cfg(int q, char *datacfg, char *cfgfile, char *weightfile
         fprintf(stderr, "Done reading quantization config file.\n");
     }
 
+    if (compress)
+        compress_weights(net);
+
     if (filename){
         float *predictions;
         image im, sized;
@@ -623,26 +633,33 @@ void count_using_model_cfg(int q, char *datacfg, char *cfgfile, char *weightfile
 #ifdef Dtype
         image_Dtype imD, sizedD;
         if (q) {
-            imD = load_image_signed_Dtype(filename, 0, 0, 1);
-            sizedD = letterbox_image_Dtype(imD, net->w, net->h);
+            imD = load_image_color_Dtype(filename, 0, 0);
+            sizedD = center_crop_image_Dtype(imD, net->w, net->h);
             time = clock();
             predictions = network_predict_Dtype(net, sizedD.data);
         } else
 #endif
         {
-            im = load_image_signed(filename, 0, 0, 1);
-            sized = letterbox_image(im, net->w, net->h);
+            im = load_image_color(filename, 0, 0);
+            sized = center_crop_image(im, net->w, net->h);
             time = clock();
             predictions = network_predict(net, sized.data);
         }
         printf("%s: Predicted in %f seconds.\n", filename, sec(clock()-time));
         printf("Predicted: %f\n", predictions[0]);
+		for (int k=0; k<10; ++k)
+			printf("%f ", predictions[k]);
+		printf("\n");
 #ifdef Dtype
-        free_image_Dtype(imD);
-        free_image_Dtype(sizedD);
+        if(net->true_q){
+            free_image_Dtype(imD);
+            free_image_Dtype(sizedD);
+        }else
 #endif
-        free_image(im);
-        free_image(sized);
+        {
+            free_image(im);
+            free_image(sized);
+        }
     }
     count_zeros(net);
     free_network(net);
@@ -650,8 +667,9 @@ void count_using_model_cfg(int q, char *datacfg, char *cfgfile, char *weightfile
 
 void run_pruning(int argc, char **argv)
 {
-    if(argc < 4){
-        fprintf(stderr, "usage: %s %s [single/iterative] [cfg] [weights]\n", argv[0], argv[1]);
+    if(argc < 6){
+        fprintf(stderr, "usage: %s %s function [options] data_cfg net_cfg weights\n", argv[0], argv[1]);
+        fprintf(stderr, "\t\t\t[quantization_cfg] [test_input]\n");
         return;
     }
 

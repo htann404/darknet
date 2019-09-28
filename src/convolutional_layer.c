@@ -443,13 +443,13 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
 }
 
 #ifdef Dtype
-void add_bias_Dtype(Dtype *output, Dtype *biases, int batch, int n, int size)
+void add_bias_Dtype2(Dtype2 *output, Dtype *biases, int batch, int n, int size)
 {
     int i,j,b;
     for(b = 0; b < batch; ++b){
         for(i = 0; i < n; ++i){
             for(j = 0; j < size; ++j){
-                output[(b*n + i)*size + j] += biases[i];
+                output[(b*n + i)*size + j] += (Dtype2)biases[i];
             }
         }
     }
@@ -460,19 +460,20 @@ void forward_quantized_convolutional_layer(convolutional_layer *l, network* net)
 
     fill_cpu_Dtype(l->outputs*l->batch, 0, l->output_q, 1);
 
-	quantize_params *q = l->quantize;
-	if(!q) error("Convolutional layer: quantized params not found!");
+    quantize_params *q = l->quantize;
+    if(!q) error("Convolutional layer: quantized params not found!");
+
 
     int m = l->n/l->groups;
     int k = l->size*l->size*l->c/l->groups;
     int n = l->out_w*l->out_h;
-	int shamt = (q->w_fl + q->in_fl) - q->out_fl;
+    int shamt = (q->w_fl + q->in_fl) - q->out_fl;
 
     for(i = 0; i < l->batch; ++i){
         for(j = 0; j < l->groups; ++j){
             Dtype *a = q->weight_q + j*l->nweights/l->groups;
             Dtype *b = (Dtype *)net->workspace;
-            Dtype *c = l->output_q + (i*l->groups + j)*n*m;
+            Dtype2 *c = (Dtype2 *)l->output_q + (i*l->groups + j)*n*m;
             Dtype *im = net->input_q + (i*l->groups + j)*l->c/l->groups*l->h*l->w;
 
             if (l->size == 1) {
@@ -481,38 +482,70 @@ void forward_quantized_convolutional_layer(convolutional_layer *l, network* net)
                 im2col_cpu_Dtype(im, l->c/l->groups, l->h, l->w, l->size, l->stride, l->pad, b);
             }
 
-			if (!l->weights_c)
-				gemm_cpu_Dtype(0,0,m,n,k,1,a,k,b,n,1,c,n);
-			else {
-				Dtype *sp_a = l->weights_c->w_q;
-				int *ja = l->weights_c->jw;
-				int *ia = l->weights_c->iw;
-				sp_gemm_cpu_Dtype(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
-			}
-
-			// the output of GEMM has datatype Dtype2
-			shrink_Dtype2_to_Dtype_cpu(c, n*m, shamt);	
+            if (!l->weights_c){
+                gemm_cpu_Dtype(0,0,m,n,k,1,a,k,b,n,1,c,n);
+            }else {
+                Dtype *sp_a = l->weights_c->w_q;
+                int *ja = l->weights_c->jw;
+                int *ia = l->weights_c->iw;
+                sp_gemm_cpu_Dtype(0,0,m,n,k,1,sp_a,ja,ia,k,b,n,1,c,n);
+            }
+/*
+#ifdef QDEBUG
+    printf("INP: ");
+    //Dtype* c = (Dtype*)net->input_q;
+    float div = pow(2, q->w_fl+q->in_fl);
+    for (int jj=0; jj<100; ++jj){
+        printf("%.2f ", (float)c[jj]/div);
+    }
+    printf("\n");
+#endif
+*/
         }
     }
-    if (0) { //l.batch_normalize) { // assuming batchnorm folded
-        //forward_batchnorm_layer(l, net);
-    } else {
-        add_bias_Dtype(l->output_q, q->bias_q, l->batch, l->n, l->out_h*l->out_w);
+/*
+#ifdef QDEBUG
+    Dtype2* ptr = (Dtype2*)l->output_q;
+    FILE *fid=fopen("gemm.out_true", "a");
+    fprintf(fid, "%d %d %d, -- --\n", m,n,k);
+    float div = pow(2, shamt);
+    for(int k=0; k<100; ++k){
+        float val = (float)ptr[k];
+        fprintf(fid, "%f ", val/div);
+    }
+    fprintf(fid, "\n");
+    fclose(fid);
+#endif
+*/
+    if (l->batch_normalize) {
+        forward_batchnorm_layer(*l, *net);
     }
 
+    align_Dtype2_radix_cpu((Dtype2 *)l->output_q, l->batch*n*m, shamt);
+    add_bias_Dtype2((Dtype2 *)l->output_q, q->bias_q, l->batch, l->n, n);
+    shrink_Dtype2_to_Dtype_cpu((Dtype2 *)l->output_q, l->batch*n*m, 0);
+/*
+#ifdef QDEBUG
+    printf("OUT: ");
+    Dtype *c = (Dtype*)l->output_q;
+    float div = pow(2, q->out_fl);
+    for (int jj=0; jj<100; ++jj){
+        printf("%.1f ", (float)c[jj]/div);
+    }
+    printf("\n");
+#endif
+*/
     activate_array_Dtype(l->output_q, l->outputs*l->batch, l->activation);
 }
-
+#endif
 
 void forward_convolutional_layer(convolutional_layer l, network net)
 {
-	if (net.true_q){
-		forward_quantized_convolutional_layer(&l, &net);
-		return;
-	}
-#else
-void forward_convolutional_layer(convolutional_layer l, network net)
-{
+#ifdef Dtype
+    if (net.true_q){
+        forward_quantized_convolutional_layer(&l, &net);
+        return;
+    }
 #endif
     int i, j;
 
@@ -546,9 +579,10 @@ void forward_convolutional_layer(convolutional_layer l, network net)
                 im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             }
 
-            if (!l.weights_c)
+            if (!l.weights_c){
                 gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
-            else {
+
+            }else {
                 float *sp_a = l.weights_c->w;
                 int *ja = l.weights_c->jw;
                 int *ia = l.weights_c->iw;
@@ -578,7 +612,21 @@ void backward_convolutional_layer(convolutional_layer l, network net)
     int n = l.size*l.size*l.c/l.groups;
     int k = l.out_w*l.out_h;
 
-    gradient_array(l.output, l.outputs*l.batch, l.activation, l.delta);
+#ifdef Dtype
+    float *space=NULL;
+    float *weights=NULL;
+    if (net.true_q){
+        int size = l.batch*l.c*l.h*l.w;
+        space = calloc(size, sizeof(float));
+        weights = calloc(l.nweights, sizeof(float));
+        copy_Dtype_to_float_cpu(space, net.input_q, l.batch*l.c*l.h*l.w,
+                                l.quantize->in_fl, sizeof(Dtype));
+        copy_Dtype_to_float_cpu(weights, l.quantize->weight_q, l.nweights,
+                                l.quantize->w_fl, sizeof(Dtype));
+        gradient_array_Dtype(l.output_q, l.outputs*l.batch, l.activation, l.delta);
+    }else
+#endif
+        gradient_array(l.output, l.outputs*l.batch, l.activation, l.delta);
 
     if(l.batch_normalize){
         backward_batchnorm_layer(l, net);
@@ -592,7 +640,15 @@ void backward_convolutional_layer(convolutional_layer l, network net)
             float *b = net.workspace;
             float *c = l.weight_updates + j*l.nweights/l.groups;
 
-            float *im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
+            float *im;
+#ifdef Dtype
+            if(net.true_q){ 
+                im  = space + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
+            }else
+#endif
+            {
+                im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
+            }
             float *imd = net.delta + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
             if(l.size == 1){
@@ -605,7 +661,12 @@ void backward_convolutional_layer(convolutional_layer l, network net)
             gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
             if (net.delta) {
-                a = l.weights + j*l.nweights/l.groups;
+#ifdef Dtype
+                if(net.true_q)
+                    a = weights + j*l.nweights/l.groups;
+                else
+#endif
+                    a = l.weights + j*l.nweights/l.groups;
                 b = l.delta + (i*l.groups + j)*m*k;
                 c = net.workspace;
                 if (l.size == 1) {
@@ -620,6 +681,10 @@ void backward_convolutional_layer(convolutional_layer l, network net)
             }
         }
     }
+#ifdef Dtype
+    if(space)   free(space);
+    if(weights) free(weights);
+#endif
 }
 
 void update_convolutional_layer(convolutional_layer l, update_args a)

@@ -59,7 +59,9 @@ void quantize_cpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZAT
 void softmax_cpu_Dtype(Dtype *input, int n, int batch, int batch_offset, int groups, int group_offset, int stride, float temp, float *output);
 void shortcut_cpu_Dtype(int batch, int w1, int h1, int c1, Dtype *add, int w2, int h2, int c2, int s1, int s2, Dtype *out);
 void shrink_Dtype2_to_Dtype_cpu(Dtype2 *x, int n, int shamt);
-void make_quantized_weights_cpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+void make_true_quantized_cpu(Dtype *w_q, float *w, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+void copy_Dtype_to_float_cpu(float *d, void *s, int n, int fl, size_t SIZE);
+void align_Dtype2_radix_cpu(Dtype2 *x, int n, int shamt);
 #endif
 
 #ifdef GPU
@@ -122,9 +124,15 @@ void upsample_gpu(float *in, int w, int h, int c, int batch, int stride, int for
 
 void quantize_gpu(float *x, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 #ifdef Dtype
-void make_quantized_weights_gpu(float *w, Dtype *w_q, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
+void make_true_quantized_gpu(Dtype *w_q, float *w, int n, int bw, int fl, ROUNDING_MODE mode, QUANTIZATION_TYPE type);
 void copy_gpu_offset_Dtype(int N, Dtype * X, int OFFX, int INCX, Dtype * Y, int OFFY, int INCY);
 void copy_gpu_Dtype(int N, Dtype * X, int INCX, Dtype * Y, int INCY);
+void fill_gpu_Dtype(int N, Dtype ALPHA, Dtype * X, int INCX);
+void copy_Dtype_to_float_gpu(float *D, void *S, int N, int FL, size_t SIZE);
+void copy_float_to_Dtype2_gpu(Dtype2 *D, float *S, int N, int FL);
+void align_Dtype2_radix_gpu(Dtype2 *X, int N, int shamt);
+void add_bias_Dtype2_gpu(Dtype2 *output, Dtype *biases, int batch, int n, int size);
+void shrink_Dtype2_to_Dtype_gpu(Dtype2 *x, int n, int shamt);
 #endif
 #endif
 #endif

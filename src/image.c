@@ -1593,8 +1593,8 @@ image_Dtype load_image_Dtype(char *filename, int width, int height, int channel,
                 int dst_index = i + w*j + w*h*k;
                 int src_index = k + c*i + c*w*j;
                 float d = ((float)data[src_index] + bias)/div;
-                make_quantized_weights_cpu(&d, im.data+dst_index,
-                                           1, 8, 7, ROUND_NEAREST, DFP); 
+                make_true_quantized_cpu(im.data+dst_index, &d,
+                                        1, 8, 7, ROUND_NEAREST, DFP);
                 //im.data[dst_index] = (Dtype)((int)data[src_index]/div + bias);
             }
         }

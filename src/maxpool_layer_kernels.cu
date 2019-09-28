@@ -6,8 +6,33 @@ extern "C" {
 #include "maxpool_layer.h"
 #include "cuda.h"
 }
+#ifdef Dtype
+__device__ void forward_maxpool_layer_Dtype_device(int in_h, int in_w, int in_c, int out_index,
+                                                   int b, int i, int j, int k, int size,
+                                                   int stride, int h_offset, int w_offset,
+                                                   Dtype *input, Dtype *output, int *indexes)
+{
+    Dtype max = Dtype_MIN;
+    int max_i = -1;
+    int l, m;
+    for(l = 0; l < size; ++l){
+        for(m = 0; m < size; ++m){
+            int cur_h = h_offset + i*stride + l;
+            int cur_w = w_offset + j*stride + m;
+            int index = cur_w + in_w*(cur_h + in_h*(k + b*in_c));
+            int valid = (cur_h >= 0 && cur_h < in_h &&
+                    cur_w >= 0 && cur_w < in_w);
+            Dtype val = (valid != 0) ? input[index] : Dtype_MIN;
+            max_i = (val > max) ? index : max_i;
+            max   = (val > max) ? val   : max;
+        }
+    }
+    output[out_index] = max;
+    indexes[out_index] = max_i;
+}
+#endif
 
-__global__ void forward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_c, int stride, int size, int pad, float *input, float *output, int *indexes)
+__global__ void forward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_c, int stride, int size, int pad, void *in, void *out, int *indexes, int true_q)
 {
     int h = (in_h + pad - size)/stride + 1;
     int w = (in_w + pad - size)/stride + 1;
@@ -28,6 +53,19 @@ __global__ void forward_maxpool_layer_kernel(int n, int in_h, int in_w, int in_c
     int h_offset = -pad/2;
 
     int out_index = j + w*(i + h*(k + c*b));
+    if(true_q){
+#ifdef Dtype
+        forward_maxpool_layer_Dtype_device(in_h, in_w, in_c, out_index,
+                                           b, i, j, k, size,
+                                           stride, h_offset, w_offset,
+                                           (Dtype *)in, (Dtype *)out, indexes);
+        return;
+#endif
+    }
+    
+    float *input = (float *)in;
+    float *output = (float *)out;
+
     float max = -INFINITY;
     int max_i = -1;
     int l, m;
@@ -91,8 +129,15 @@ extern "C" void forward_maxpool_layer_gpu(maxpool_layer layer, network net)
     int c = layer.c;
 
     size_t n = h*w*c*layer.batch;
+#ifdef Dtype
+    if(net.true_q){
+        forward_maxpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.h, layer.w, layer.c, layer.stride, layer.size, layer.pad, (void *)net.input_q_gpu, (void *)layer.output_q_gpu, layer.indexes_gpu, 1);
+    }else
+#endif
+    {
+        forward_maxpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.h, layer.w, layer.c, layer.stride, layer.size, layer.pad, (void *)net.input_gpu, (void *)layer.output_gpu, layer.indexes_gpu, 0);
+    }
 
-    forward_maxpool_layer_kernel<<<cuda_gridsize(n), BLOCK>>>(n, layer.h, layer.w, layer.c, layer.stride, layer.size, layer.pad, net.input_gpu, layer.output_gpu, layer.indexes_gpu);
     check_error(cudaPeekAtLastError());
 }
 

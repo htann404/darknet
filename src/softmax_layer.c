@@ -47,8 +47,19 @@ void forward_softmax_layer(const softmax_layer l, network net)
             count += group_size;
         }
     } else {
+        float *input = net.input;
 #ifdef Dtype
-        if (net.true_q){
+        quantize_params *q = l.quantize;
+        if (net.true_q && net.train){
+            copy_Dtype_to_float_cpu(net.workspace, net.input_q, l.batch*l.c*l.w*l.h, q->out_fl, sizeof(Dtype));
+            input = net.workspace; 
+        }
+        /*
+        for (int jj=0; jj<10; ++jj){
+            printf("%f ", input[jj]);
+        }
+        printf("\n");*/
+        if (net.true_q && net.train==0){
             if(l.spatial){
                 softmax_cpu_Dtype(net.input_q, l.c, l.batch, l.inputs, l.w*l.h, 1,
                                                 l.w*l.h, l.temperature, l.output);
@@ -60,15 +71,15 @@ void forward_softmax_layer(const softmax_layer l, network net)
 #endif
         {
             if(l.spatial){
-                softmax_cpu(net.input, l.c, l.batch, l.inputs, l.w*l.h, 1,
+                softmax_cpu(input, l.c, l.batch, l.inputs, l.w*l.h, 1,
                             l.w*l.h, l.temperature, l.output);
             }else{
-                softmax_cpu(net.input, l.inputs/l.groups, l.batch, l.inputs,
+                softmax_cpu(input, l.inputs/l.groups, l.batch, l.inputs,
                             l.groups, l.inputs/l.groups, 1, l.temperature, l.output);
             }
         }
     }
-
+    
     if(net.truth && !l.noloss){
         softmax_x_ent_cpu(l.batch*l.inputs, l.output, net.truth, l.delta, l.loss);
         l.cost[0] = sum_array(l.loss, l.batch*l.inputs);
@@ -101,10 +112,20 @@ void forward_softmax_layer_gpu(const softmax_layer l, network net)
         }
         */
     } else {
+        float *input = net.input_gpu;
+#ifdef Dtype
+        quantize_params *q = l.quantize;
+        if (net.true_q){
+            copy_Dtype_to_float_gpu(net.workspace, net.input_q_gpu, l.batch*l.c*l.w*l.h, q->out_fl, sizeof(Dtype));
+            input = net.workspace;
+        }
+#endif
         if(l.spatial){
-            softmax_gpu(net.input_gpu, l.c, l.batch*l.c, l.inputs, l.w*l.h, 1, l.w*l.h, 1, l.output_gpu);
+            softmax_gpu(input, l.c, l.batch*l.c,
+                        l.inputs, l.w*l.h, 1, l.w*l.h, 1, l.output_gpu);
         }else{
-            softmax_gpu(net.input_gpu, l.inputs/l.groups, l.batch, l.inputs, l.groups, l.inputs/l.groups, 1, l.temperature, l.output_gpu);
+            softmax_gpu(input, l.inputs/l.groups, l.batch,
+                        l.inputs, l.groups, l.inputs/l.groups, 1, l.temperature, l.output_gpu);
         }
     }
     if(net.truth && !l.noloss){
